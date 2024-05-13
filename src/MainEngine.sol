@@ -76,8 +76,8 @@ contract MainEngine {
     /////////////////
 
     constructor() {
-        artBlockToken = new CustomERC20Token("ARTBLOCKTOKEN", "ABT", address(this));
         creatorProtocol = msg.sender;
+        artBlockToken = new CustomERC20Token("ARTBLOCKTOKEN", "ABT", creatorProtocol);
     }
 
     //////////////////////////

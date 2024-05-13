@@ -32,21 +32,17 @@ contract MainEngineTest is Test {
     function testBuyArtBlockToken() public {
         uint256 amount = STARTING_BUYING_AMOUNT;
         uint256 tokenAmount = 1000 wei * amount; // 1 ArtBlock token = 1000 wei
-
         // Deal the required amount of Ether to the USER account
         vm.deal(USER, tokenAmount);
-
         // Call the buyArtBlockToken function with the required amount of Ether
-        vm.prank(USER);
         mainEngine.buyArtBlockToken{value: tokenAmount}(USER, amount);
-
         // Add assertions to verify the expected behavior
         assertEq(artBlockToken.balanceOf(USER), amount, "Incorrect token balance");
     }
 
     modifier buyArtBlockToken() {
         uint256 tokenAmount = 1000 wei * STARTING_BUYING_AMOUNT;
-        hoax(USER, tokenAmount);
+        vm.deal(USER, tokenAmount);
         mainEngine.buyArtBlockToken{value: tokenAmount}(USER, STARTING_BUYING_AMOUNT);
         _;
     }
