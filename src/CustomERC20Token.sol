@@ -5,8 +5,6 @@ import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/extensions/ERC20Burnable.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 
-import {console} from "forge-std/console.sol";
-
 contract CustomERC20Token is ERC20, ERC20Burnable, Ownable {
     ///////////////////
     ///// Errors //////
@@ -32,11 +30,9 @@ contract CustomERC20Token is ERC20, ERC20Burnable, Ownable {
 
     constructor(string memory name, string memory symbol, address creator) ERC20(name, symbol) Ownable(creator) {
         MAIN_ENGINE = msg.sender;
-        console.log("Main Engine: ", MAIN_ENGINE);
     }
 
     function mint(address to, uint256 amount) public onlyMainEngine {
-        console.log("Main Engine: ", msg.sender);
         _mint(to, amount);
     }
 

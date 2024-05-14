@@ -23,7 +23,7 @@
 
 pragma solidity ^0.8.20;
 
-import {CustomERC20Token} from "./CustomERC20Token.sol";
+import { CustomERC20Token } from "./CustomERC20Token.sol";
 
 contract MainEngine {
     ///////////////
@@ -31,6 +31,8 @@ contract MainEngine {
     ///////////////
     error MainEngine__TransferFailed();
     error MainEngine__InSufficientAmount();
+    error MainEngine__JoinCommunityFailed();
+    error MainEngine__AlreadyAMember();
 
     /////////////////////////
     //   State Variables  //
@@ -49,6 +51,7 @@ contract MainEngine {
         string tokenName;
         string tokenSymbol;
         address communityCreator;
+        uint256 totalMembers;
     }
 
     //////////////////////
@@ -57,6 +60,8 @@ contract MainEngine {
 
     mapping(address communityToken => CommunityInfo) public communityInfo;
     mapping(address communityCreator => CommunityInfo[]) public creatorCommunities;
+    mapping(address user => address[] communityTokens) public userCommunities;
+    mapping(address user => mapping(address communityToken => bool isMember)) public isCommunityMember;
 
     /////////////////////
     ////// Arrays  /////
@@ -70,6 +75,7 @@ contract MainEngine {
     event CommunityCreated(
         string indexed communityName, address indexed communityCreator, address indexed communityToken
     );
+    event JoinedCommunity(address indexed user, address indexed communityToken);
 
     /////////////////
     //  Functions  //
@@ -98,18 +104,37 @@ contract MainEngine {
         string memory tokenName,
         string memory tokenSymbol,
         address communityCreator
-    ) external payable {
+    )
+        external
+        payable
+    {
+        // Minimum amount to create a communinity is 1000 ABT
         if (artBlockToken.balanceOf(communityCreator) < 1000) {
             revert MainEngine__InSufficientAmount();
         }
         artBlockToken.burnFrom(communityCreator, 1000);
-        CustomERC20Token communityToken = new CustomERC20Token(tokenName, tokenSymbol, communityCreator); // have to approve the engine to access the tokens
+        CustomERC20Token communityToken = new CustomERC20Token(tokenName, tokenSymbol, communityCreator);
         communityTokens.push(address(communityToken));
         CommunityInfo memory newCommunity =
-            CommunityInfo(communityName, communityDescription, tokenName, tokenSymbol, communityCreator);
-        emit CommunityCreated(communityName, communityCreator, address(communityToken));
+            CommunityInfo(communityName, communityDescription, tokenName, tokenSymbol, communityCreator, 1);
         communityInfo[address(communityToken)] = newCommunity;
         creatorCommunities[communityCreator].push(newCommunity);
+        emit CommunityCreated(communityName, communityCreator, address(communityToken));
+    }
+
+    function joinCommunity(address tokenAddress) external {
+        // Join the community
+        if (communityInfo[tokenAddress].communityCreator == address(0)) {
+            revert MainEngine__JoinCommunityFailed();
+        }
+        if (isCommunityMember[msg.sender][tokenAddress] == true) {
+            revert MainEngine__AlreadyAMember();
+        }
+        communityInfo[tokenAddress].totalMembers += 1;
+        isCommunityMember[msg.sender][tokenAddress] = true;
+        userCommunities[msg.sender].push(tokenAddress);
+
+        emit JoinedCommunity(msg.sender, tokenAddress);
     }
 
     /*
@@ -123,7 +148,7 @@ contract MainEngine {
         if (tokenAmount != msg.value) {
             revert MainEngine__InSufficientAmount();
         }
-        (bool success,) = creatorProtocol.call{value: tokenAmount}("");
+        (bool success,) = creatorProtocol.call{ value: tokenAmount }("");
         // check if the transfer of ABT is successful
         if (!success) {
             revert MainEngine__TransferFailed();
