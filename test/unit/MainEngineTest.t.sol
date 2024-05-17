@@ -30,6 +30,10 @@ contract MainEngineTest is Test {
         assertEq(mainEngine.getCreatorProtocol(), creatorProtocol);
     }
 
+    ///////////////////////////
+    // Test buyArtBlockToken //
+    ///////////////////////////
+
     function testBuyArtBlockToken() public {
         uint256 amount = STARTING_BUYING_AMOUNT_ERC20;
         uint256 tokenAmount = 1000 wei * amount; // 1 ArtBlock token = 1000 wei

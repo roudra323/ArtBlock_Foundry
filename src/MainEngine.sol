@@ -24,6 +24,7 @@
 pragma solidity ^0.8.20;
 
 import { CustomERC20Token } from "./CustomERC20Token.sol";
+import { ArtBlockGovernance } from "./ArtBlockGovernance.sol";
 
 contract MainEngine {
     ///////////////
@@ -40,6 +41,7 @@ contract MainEngine {
 
     address private immutable creatorProtocol;
     CustomERC20Token private immutable artBlockToken;
+    ArtBlockGovernance private immutable governance;
 
     //////////////////////
     ////// Structs  //////
@@ -84,6 +86,7 @@ contract MainEngine {
     constructor() {
         creatorProtocol = msg.sender;
         artBlockToken = new CustomERC20Token("ARTBLOCKTOKEN", "ABT", creatorProtocol);
+        governance = new ArtBlockGovernance(address(this));
     }
 
     //////////////////////////
@@ -108,7 +111,7 @@ contract MainEngine {
         external
         payable
     {
-        // Minimum amount to create a communinity is 1000 ABT
+        // Minimum amount to create a community is 1000 ABT
         if (artBlockToken.balanceOf(communityCreator) < 1000) {
             revert MainEngine__InSufficientAmount();
         }
@@ -127,7 +130,7 @@ contract MainEngine {
         if (communityInfo[tokenAddress].communityCreator == address(0)) {
             revert MainEngine__JoinCommunityFailed();
         }
-        if (isCommunityMember[msg.sender][tokenAddress] == true) {
+        if (isCommunityMember[msg.sender][tokenAddress]) {
             revert MainEngine__AlreadyAMember();
         }
         communityInfo[tokenAddress].totalMembers += 1;
@@ -157,6 +160,14 @@ contract MainEngine {
         emit ABTBoughtByUser(to, amount);
     }
 
+    function buyCommunityToken(address to, uint256 amount, address communityToken) public payable {
+        if (artBlockToken.balanceOf(to) < amount) {
+            revert MainEngine__InSufficientAmount();
+        }
+        artBlockToken.burnFrom(to, amount);
+        CustomERC20Token(communityToken).mint(to, amount);
+    }
+
     /////////////////////////////
     //  view & pure Functions  //
     /////////////////////////////
@@ -167,5 +178,9 @@ contract MainEngine {
 
     function getCreatorProtocol() public view returns (address) {
         return creatorProtocol;
+    }
+
+    function isCommunityMembr(address user, address communityToken) public view returns (bool) {
+        return isCommunityMember[user][communityToken];
     }
 }
