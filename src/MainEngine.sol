@@ -21,7 +21,7 @@
 // private
 // view & pure functions
 
-pragma solidity ^0.8.20;
+pragma solidity ^0.8.23;
 
 import { CustomERC20Token } from "./CustomERC20Token.sol";
 import { ArtBlockGovernance } from "./ArtBlockGovernance.sol";
@@ -56,6 +56,22 @@ contract MainEngine {
         uint256 totalMembers;
     }
 
+    struct ProductBase {
+        uint256 stakeAmount;
+        uint256 upvotes;
+        uint256 downvotes;
+        bool approved;
+        bool exists;
+    }
+
+    struct Product {
+        string metadata; // Metadata about the product (e.g., title, description, URL)
+        bool isListedForResell;
+        address author;
+        address currentOwner;
+        address currentCommunity;
+    }
+
     //////////////////////
     ////// Mappings  /////
     //////////////////////
@@ -64,6 +80,9 @@ contract MainEngine {
     mapping(address communityCreator => CommunityInfo[]) public creatorCommunities;
     mapping(address user => address[] communityTokens) public userCommunities;
     mapping(address user => mapping(address communityToken => bool isMember)) public isCommunityMember;
+    mapping(bytes32 productId => ProductBase) public productBaseInfo;
+    mapping(bytes32 productId => Product) public productInfo;
+    mapping(address user => bytes4[] userProducts) public userProducts;
 
     /////////////////////
     ////// Arrays  /////
@@ -78,6 +97,7 @@ contract MainEngine {
         string indexed communityName, address indexed communityCreator, address indexed communityToken
     );
     event JoinedCommunity(address indexed user, address indexed communityToken);
+    event ProductSubmitted(bytes32 indexed productId, address indexed author, uint256 indexed stakeAmount);
 
     /////////////////
     //  Functions  //
@@ -86,7 +106,7 @@ contract MainEngine {
     constructor() {
         creatorProtocol = msg.sender;
         artBlockToken = new CustomERC20Token("ARTBLOCKTOKEN", "ABT", creatorProtocol);
-        governance = new ArtBlockGovernance(address(this));
+        // governance = new ArtBlockGovernance(); // Getting error for this
     }
 
     //////////////////////////
@@ -125,6 +145,11 @@ contract MainEngine {
         emit CommunityCreated(communityName, communityCreator, address(communityToken));
     }
 
+    /*
+     * @notice Function to join a community
+     * @param tokenAddress address of the community token
+     */
+
     function joinCommunity(address tokenAddress) external {
         // Join the community
         if (communityInfo[tokenAddress].communityCreator == address(0)) {
@@ -146,6 +171,7 @@ contract MainEngine {
      * @param amount number of ArtBlock tokens to buy
      */
     function buyArtBlockToken(address to, uint256 amount) public payable {
+        // ToDo : Need to change the tokenRate through GoveranceContract
         uint256 tokenAmount = 1000 wei * amount; // 1 ArtBlock token = 1000 wei
         // check if the user has sent the specified amount of ether to buy the ABX token
         if (tokenAmount != msg.value) {
@@ -160,12 +186,43 @@ contract MainEngine {
         emit ABTBoughtByUser(to, amount);
     }
 
+    /*
+     * @notice Function to buy community token by sending ArtBlock token
+     * @param to address of the user who is buying the community token
+     * @param amount number of ArtBlock tokens to buy the community token
+     * @param communityToken address of the community token
+     */
+
     function buyCommunityToken(address to, uint256 amount, address communityToken) public payable {
         if (artBlockToken.balanceOf(to) < amount) {
+            // ToDo : Need to change the tokenRate through GoveranceContract
             revert MainEngine__InSufficientAmount();
         }
         artBlockToken.burnFrom(to, amount);
         CustomERC20Token(communityToken).mint(to, amount);
+    }
+
+    function submitProduct(string memory metadata, uint256 stakeAmount, address commToken) external {
+        // Generate a unique product ID using keccak256
+        bytes4 productId = bytes4(keccak256(abi.encodePacked(msg.sender, block.timestamp, metadata)));
+
+        require(!productBaseInfo[productId].exists, "Product already exists");
+        CustomERC20Token(commToken).transferFrom(msg.sender, address(this), stakeAmount);
+
+        productBaseInfo[productId] =
+            ProductBase({ stakeAmount: stakeAmount, upvotes: 0, downvotes: 0, approved: false, exists: true });
+
+        productInfo[productId] = Product({
+            metadata: metadata,
+            isListedForResell: false,
+            author: msg.sender,
+            currentOwner: msg.sender,
+            currentCommunity: commToken
+        });
+
+        userProducts[msg.sender].push(productId);
+
+        emit ProductSubmitted(productId, msg.sender, stakeAmount);
     }
 
     /////////////////////////////
@@ -182,5 +239,9 @@ contract MainEngine {
 
     function isCommunityMembr(address user, address communityToken) public view returns (bool) {
         return isCommunityMember[user][communityToken];
+    }
+
+    function getProductBaseInfo(bytes32 productId) external view returns (ProductBase memory) {
+        return productBaseInfo[productId];
     }
 }

@@ -4,7 +4,7 @@ pragma solidity ^0.8.20;
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 interface IMainEngine {
-    function isMember(address user, address communityToken) external view returns (bool);
+    function isCommunityMembr(address user, address communityToken) external view returns (bool);
     function getTokenAddress() external view returns (address);
 }
 
@@ -18,12 +18,18 @@ contract ArtBlockGovernance {
     error ArtBlockGovernance__AlreadyVoted();
     error ArtBlockGovernance__InvalidProposalIndex();
     error ArtBlockGovernance__NotCommunityMember();
+    error ArtBlockGovernance__RateChangeTooSoon();
 
     /////////////////////////
     //   State Variables  //
     ////////////////////////
     address private immutable mainEngineAddress;
     address private immutable artBlockToken;
+
+    uint256 private constant VOTING_PRECISION = 10e8;
+    uint256 private constant RATE_CHANGE_COOLDOWN = 2 weeks;
+
+    uint256 private initialRateOfCommunityToken = 1;
 
     //////////////////////
     ////// Structs  //////
@@ -42,6 +48,7 @@ contract ArtBlockGovernance {
     ////// Mappings  /////
     //////////////////////
     mapping(address => uint256) public communityTokenRate;
+    mapping(address => uint256) public lastRateChangeTime;
 
     /////////////////////
     ////// Arrays  /////
@@ -59,7 +66,7 @@ contract ArtBlockGovernance {
     }
 
     modifier onlyCommunityMember(address communityToken) {
-        if (!IMainEngine(mainEngineAddress).isMember(msg.sender, communityToken)) {
+        if (!IMainEngine(mainEngineAddress).isCommunityMembr(msg.sender, communityToken)) {
             revert ArtBlockGovernance__NotCommunityMember();
         }
         _;
@@ -68,8 +75,8 @@ contract ArtBlockGovernance {
     /////////////////
     //  Functions  //
     /////////////////
-    constructor(address _mainEngineAddress) {
-        mainEngineAddress = _mainEngineAddress;
+    constructor() {
+        mainEngineAddress = msg.sender;
         artBlockToken = IMainEngine(mainEngineAddress).getTokenAddress();
     }
 
@@ -84,6 +91,10 @@ contract ArtBlockGovernance {
         external
         onlyCommunityMember(communityToken)
     {
+        if (block.timestamp < lastRateChangeTime[communityToken] + RATE_CHANGE_COOLDOWN) {
+            revert ArtBlockGovernance__RateChangeTooSoon();
+        }
+
         uint256 proposalIndex = rateChangeProposals.length;
         initializeRateChangeProposal(proposalIndex, communityToken, proposedRate, block.timestamp + votingDuration);
     }
@@ -118,9 +129,9 @@ contract ArtBlockGovernance {
 
         proposal.votes[msg.sender] = true;
         if (vote) {
-            proposal.votesFor += IERC20(artBlockToken).balanceOf(msg.sender);
+            proposal.votesFor += 1;
         } else {
-            proposal.votesAgainst += IERC20(artBlockToken).balanceOf(msg.sender);
+            proposal.votesAgainst += 1;
         }
     }
 
@@ -135,14 +146,20 @@ contract ArtBlockGovernance {
         }
 
         uint256 totalVotes = proposal.votesFor + proposal.votesAgainst;
-        uint256 threshold = (totalVotes * 60) / 100; // Assuming 60% voting threshold
+        uint256 threshold = (totalVotes * 60 * VOTING_PRECISION) / 100; // Assuming 60% voting threshold
 
-        if (proposal.votesFor >= threshold) {
+        if (proposal.votesFor * VOTING_PRECISION >= threshold) {
             communityTokenRate[proposal.communityToken] = proposal.proposedRate;
+            lastRateChangeTime[proposal.communityToken] = block.timestamp;
         }
     }
 
     function updateCommunityTokenRate(address communityToken, uint256 newRate) public onlyMainEngine {
         communityTokenRate[communityToken] = newRate;
+        lastRateChangeTime[communityToken] = block.timestamp;
+    }
+
+    function getCommunityTokenRate(address communityToken) external view returns (uint256) {
+        return communityTokenRate[communityToken];
     }
 }
