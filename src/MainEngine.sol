@@ -60,6 +60,7 @@ contract MainEngine {
         uint256 stakeAmount;
         uint256 upvotes;
         uint256 downvotes;
+        uint256 productSubmittedTime;
         bool approved;
         bool exists;
     }
@@ -106,7 +107,7 @@ contract MainEngine {
     constructor() {
         creatorProtocol = msg.sender;
         artBlockToken = new CustomERC20Token("ARTBLOCKTOKEN", "ABT", creatorProtocol);
-        // governance = new ArtBlockGovernance(); // Getting error for this
+        governance = new ArtBlockGovernance();
     }
 
     //////////////////////////
@@ -186,13 +187,12 @@ contract MainEngine {
         emit ABTBoughtByUser(to, amount);
     }
 
-    /*
+    /**
      * @notice Function to buy community token by sending ArtBlock token
      * @param to address of the user who is buying the community token
      * @param amount number of ArtBlock tokens to buy the community token
      * @param communityToken address of the community token
      */
-
     function buyCommunityToken(address to, uint256 amount, address communityToken) public payable {
         if (artBlockToken.balanceOf(to) < amount) {
             // ToDo : Need to change the tokenRate through GoveranceContract
@@ -209,8 +209,14 @@ contract MainEngine {
         require(!productBaseInfo[productId].exists, "Product already exists");
         CustomERC20Token(commToken).transferFrom(msg.sender, address(this), stakeAmount);
 
-        productBaseInfo[productId] =
-            ProductBase({ stakeAmount: stakeAmount, upvotes: 0, downvotes: 0, approved: false, exists: true });
+        productBaseInfo[productId] = ProductBase({
+            stakeAmount: stakeAmount,
+            upvotes: 0,
+            downvotes: 0,
+            approved: false,
+            exists: true,
+            productSubmittedTime: block.timestamp
+        });
 
         productInfo[productId] = Product({
             metadata: metadata,
@@ -241,7 +247,7 @@ contract MainEngine {
         return isCommunityMember[user][communityToken];
     }
 
-    function getProductBaseInfo(bytes32 productId) external view returns (ProductBase memory) {
+    function getProductBaseInfo(bytes4 productId) external view returns (ProductBase memory) {
         return productBaseInfo[productId];
     }
 }

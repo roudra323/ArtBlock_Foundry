@@ -77,7 +77,7 @@ contract ArtBlockGovernance {
     /////////////////
     constructor() {
         mainEngineAddress = msg.sender;
-        artBlockToken = IMainEngine(mainEngineAddress).getTokenAddress();
+        // artBlockToken = IMainEngine(mainEngineAddress).getTokenAddress();
     }
 
     //////////////////////////

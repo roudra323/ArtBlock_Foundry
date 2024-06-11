@@ -21,7 +21,7 @@
 // private
 // view & pure functions
 
-pragma solidity ^0.8.0;
+pragma solidity ^0.8.20;
 
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
@@ -29,6 +29,7 @@ struct ProductBase {
     uint256 stakeAmount;
     uint256 upvotes;
     uint256 downvotes;
+    uint256 productSubmittedTime;
     bool approved;
     bool exists;
 }
@@ -45,6 +46,7 @@ contract VotingContract {
 
     error VotingContract__ProductDoesntExist(bytes4 productId);
     error VotingContract__ProductAlreadyApproved(bytes4 productId);
+    error VotingContract__VotingOnGoing(bytes4 productId);
 
     /////////////////////////
     //   State Variables  //
@@ -61,9 +63,8 @@ contract VotingContract {
     ////////////////
     //   Events  //
     ////////////////
-    event ProductAdded(uint256 id);
-    event VoteCasted(bytes4 productId);
-    event VotesCounted(uint256 productId);
+    event VoteCasted(bytes4 indexed productId, address indexed communityToken, bool indexed isUPVote);
+    event VotesCounted(uint256 indexed productId);
 
     ////////////////
     //  Modifiers //
@@ -77,12 +78,22 @@ contract VotingContract {
     //  Functions  //
     /////////////////
 
+    /**
+     * @notice Constructor to initialize the VotingContract
+     * @param _mainEngineAddress Address of the main engine contract
+     */
     constructor(address _mainEngineAddress) {
         mainEngineAddress = _mainEngineAddress;
         artBlockToken = IMainEngine(mainEngineAddress).getTokenAddress();
     }
 
-    function voteForProduct(bytes4 productId) external {
+    /**
+     * @notice Cast a vote for a product
+     * @param productId ID of the product to vote for
+     * @param communityToken Address of the community token
+     * @param isUPVote Boolean indicating if the vote is an upvote
+     */
+    function voteForProduct(bytes4 productId, address communityToken, bool isUPVote) external {
         ProductBase storage productBase = productsVotingInfo[productId];
 
         if (!IMainEngine(mainEngineAddress).getProductBaseInfo(productId).exists) {
@@ -93,15 +104,72 @@ contract VotingContract {
             revert VotingContract__ProductAlreadyApproved(productId);
         }
 
-        productBase.upvotes += calculateVote(msg.sender, artBlockToken);
-        emit VoteCasted(productId);
+        if (isUPVote) {
+            productBase.upvotes += calculateVoteWeight(msg.sender, communityToken);
+        } else {
+            productBase.downvotes += calculateVoteWeight(msg.sender, communityToken);
+        }
+        emit VoteCasted(productId, communityToken, isUPVote);
     }
 
-    function calculateVote(address user, address community) internal view returns (uint256 totalVotes) {
+    /**
+     * @notice Calculate the voting result for a product
+     * @param productId ID of the product to calculate the voting result for
+     */
+    function calculateVotingResult(bytes4 productId) external {
+        ProductBase storage productBase = productsVotingInfo[productId];
+
+        if (productBase.approved) {
+            revert VotingContract__ProductAlreadyApproved(productId);
+        }
+
+        if (
+            IMainEngine(mainEngineAddress).getProductBaseInfo(productId).productSubmittedTime + 1 days < block.timestamp
+        ) {
+            revert VotingContract__VotingOnGoing(productId);
+        }
+
+        if (productBase.upvotes > productBase.downvotes) {
+            productBase.approved = true;
+            productBase.exists = true;
+        }
+    }
+
+    //////////////////////////////
+    /// Internal View Functions //
+    //////////////////////////////
+
+    /**
+     * @notice Calculate the vote weight based on user's token balances
+     * @param user Address of the user
+     * @param community Address of the community token
+     * @return totalVotes Calculated vote weight
+     */
+    function calculateVoteWeight(address user, address community) internal view returns (uint256 totalVotes) {
         uint256 userCommunitytoken = IERC20(community).balanceOf(user);
         uint256 userArtBlockToken = IERC20(artBlockToken).balanceOf(user);
-        uint256 communityTokenWeight = (userCommunitytoken * 6 * VOTING_PRECISION) / 10; // 60% weightage
-        uint256 artblockTokenWeight = (userArtBlockToken * 4 * VOTING_PRECISION) / 10; // 40% weightage
-        totalVotes = (communityTokenWeight + artblockTokenWeight) / VOTING_PRECISION;
+        uint256 communityTokenWeight = (userCommunitytoken * 7 * VOTING_PRECISION) / 10; // 70% weightage of the
+            // community token
+
+        uint256 artblockTokenWeight = (userArtBlockToken * 3 * VOTING_PRECISION) / 10; // 30% weightage of the artblock
+            // token
+        totalVotes = (communityTokenWeight + artblockTokenWeight);
+    }
+
+    //////////////////////////////
+    ///// Getter Functions  //////
+    //////////////////////////////
+
+    function getProductVotingInfo(bytes4 productId) external view returns (ProductBase memory) {
+        return productsVotingInfo[productId];
+    }
+
+    /**
+     * @notice Converts bytes4 to uint32
+     * @param input bytes4 input
+     * @return output uint32 output
+     */
+    function bytes4ToUint32(bytes4 input) public pure returns (uint32 output) {
+        output = (uint32(bytes4(input)));
     }
 }
