@@ -126,7 +126,7 @@ contract VotingContract {
 
         if (
             IMainEngine(mainEngineAddress).getProductBaseInfo(productId).productSubmittedTime + VOTING_DURATION
-                < block.timestamp
+                >= block.timestamp
         ) {
             revert VotingContract__VotingOnGoing(productId);
         }
