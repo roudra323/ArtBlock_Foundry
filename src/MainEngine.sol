@@ -31,6 +31,10 @@ interface IVotingContract {
     function getVotingDuration() external pure returns (uint256);
 }
 
+interface IArtBlockNFT {
+    function safeMint(address to, string memory uri, bytes4 productId) external;
+}
+
 /**
  * @title MainEngine
  * @notice Manages community creation, token minting, and product submission and approval processes.
@@ -72,6 +76,8 @@ contract MainEngine {
     address private govContract;
     /// @notice Address of the voting contract.
     address private votingContractAddr;
+    /// @notice Address of the ArtBlock NFT contract.
+    address private artBlockNFTContract;
 
     /// @notice Precision value for token calculations.
     uint256 private PRECESSION = 10 ** 18;
@@ -182,9 +188,9 @@ contract MainEngine {
     /// @notice Modifier to ensure that the product is approved and exists.
     /// @param productId The ID of the product.
     modifier productIsApprovedANDExists(bytes4 productId) {
-        ProductBase storage tempProdBaseInfo = productBaseInfo[productId];
+        ProductBase memory tempProdBaseInfo = productBaseInfo[productId];
         if (!tempProdBaseInfo.exists) {
-            revert MainEngine__ProductNotApproved();
+            revert MainEngine__ProductNotExisting();
         }
         if (!IVotingContract(votingContractAddr).isApproved(productId)) {
             revert MainEngine__ProductNotApproved();
@@ -201,6 +207,13 @@ contract MainEngine {
                 > block.timestamp
         ) {
             revert MainEngine__VotingOngoing();
+        }
+        _;
+    }
+
+    modifier isOwner(bytes4 productId) {
+        if (productInfo[productId].currentOwner != msg.sender) {
+            revert MainEngine__UnAuthorised();
         }
         _;
     }
@@ -356,40 +369,6 @@ contract MainEngine {
         emit ProductSubmitted(productId, msg.sender, price);
     }
 
-    // /**
-    //  * @notice Function to check the approval status of a product.
-    //  * @param productId The ID of the product.
-    //  * @return status The approval status of the product.
-    //  */
-    // function checkProductApproval(bytes4 productId) external returns (bool status) {
-    //     status = IVotingContract(votingContractAddr).isApproved(productId);
-    //     if (
-    //         status
-    //             && productBaseInfo[productId].productSubmittedTime +
-    // IVotingContract(votingContractAddr).getVotingDuration()
-    //                 < block.timestamp
-    //     ) {
-    //         ProductBase storage tempProdInfo = productBaseInfo[productId];
-    //         if (!tempProdInfo.stackReturned) {
-    //             tempProdInfo.stackReturned = true;
-    //             CustomERC20Token(productInfo[productId].currentCommunity).transfer(
-    //                 productInfo[productId].currentOwner, productBaseInfo[productId].stakeAmount
-    //             );
-    //             tempProdInfo.approved = true;
-    //         }
-    //     } else {
-    //         if (
-    //             productBaseInfo[productId].productSubmittedTime
-    //                 + IVotingContract(votingContractAddr).getVotingDuration() < block.timestamp
-    //         ) {
-    //             // If the product is not approved within the voting duration then the product is not approved
-    //             revert MainEngine__ProductNotApproved();
-    //         } else {
-    //             IVotingContract(votingContractAddr).calculateVotingResult(productId);
-    //         }
-    //     }
-    // }
-
     /**
      * @notice Checks if the product is approved, handles stake return
      * @param productId The ID of the product to check.
@@ -400,17 +379,16 @@ contract MainEngine {
         productExistsAndHasListedTimePassed(productId)
         returns (bool)
     {
-        ProductBase storage productBase = productBaseInfo[productId];
         bool isApproved = IVotingContract(votingContractAddr).isApproved(productId);
 
-        if (!productBase.stackReturned) {
+        if (!productBaseInfo[productId].stackReturned) {
             if (isApproved) {
-                productBase.approved = true;
+                productBaseInfo[productId].approved = true;
                 returnStake(productId);
             } else {
                 returnStakeHalf(productId);
             }
-            productBase.stackReturned = true;
+            productBaseInfo[productId].stackReturned = true;
         }
 
         return isApproved;
@@ -442,12 +420,28 @@ contract MainEngine {
      * @param productId The ID of the product to check.
      * @return bool indicating if the voting result can be calculated.
      */
-    function canCalculateVotingResult(bytes4 productId) private view returns (bool) {
+    function canCalculateVotingResult(bytes4 productId) public view returns (bool) {
         ProductBase memory productBase = productBaseInfo[productId];
         return !productBase.approved
             && (
                 productBase.productSubmittedTime + IVotingContract(votingContractAddr).getVotingDuration() < block.timestamp
             );
+    }
+
+    function listProductToMarketPlace(
+        bytes4 productId,
+        address commToken
+    )
+        public
+        productExistsAndHasListedTimePassed(productId)
+        productIsApprovedANDExists(productId)
+        isOwner(productId)
+    {
+        if (productBaseInfo[productId].isExclusive) {
+            IArtBlockNFT(artBlockNFTContract).safeMint(msg.sender, productInfo[productId].metadata, productId);
+        }
+        productInfo[productId].isListedOnMarketPlace = true;
+        productInfo[productId].currentCommunity = commToken;
     }
 
     /////////////////////////////
@@ -489,6 +483,14 @@ contract MainEngine {
      */
     function setGovernanceContract(address governanceContract) external onlyDeployer {
         govContract = governanceContract;
+    }
+
+    /**
+     * @notice Function to set the NFT contract address.
+     * @param nftContract The address of the NFT contract.
+     */
+    function setNFTContract(address nftContract) external onlyDeployer {
+        artBlockNFTContract = nftContract;
     }
 
     /////////////////////////////

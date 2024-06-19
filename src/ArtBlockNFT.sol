@@ -7,19 +7,18 @@ import "@openzeppelin/contracts/token/ERC721/extensions/ERC721Enumerable.sol";
 import "@openzeppelin/contracts/token/ERC721/extensions/ERC721URIStorage.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 
-contract MyToken is ERC721, ERC721Enumerable, ERC721URIStorage, Ownable {
+contract ArtBlockNFT is ERC721, ERC721Enumerable, ERC721URIStorage, Ownable {
     uint256 private _nextTokenId;
 
-    constructor() ERC721("MyToken", "MTK") Ownable(msg.sender) { }
+    mapping(bytes4 productId => uint256 tokenId) public productToTokenId;
 
-    function _baseURI() internal pure override returns (string memory) {
-        return "https://testoken";
-    }
+    constructor(address MainEngine) ERC721("ArtBlockNFT", "ATBNFT") Ownable(MainEngine) { }
 
-    function safeMint(address to, string memory uri) public onlyOwner {
+    function safeMint(address to, string memory uri, bytes4 productId) external onlyOwner {
         uint256 tokenId = _nextTokenId++;
         _safeMint(to, tokenId);
         _setTokenURI(tokenId, uri);
+        productToTokenId[productId] = tokenId;
     }
 
     // The following functions are overrides required by Solidity.
