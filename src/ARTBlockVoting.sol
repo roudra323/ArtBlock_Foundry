@@ -54,6 +54,7 @@ contract VotingContract {
     address private immutable mainEngineAddress;
     address private immutable artBlockToken;
     uint256 private constant VOTING_PRECISION = 10e8;
+    uint256 private constant VOTING_DURATION = 7 days;
 
     //////////////////////
     ////// Mappings  /////
@@ -116,7 +117,7 @@ contract VotingContract {
      * @notice Calculate the voting result for a product
      * @param productId ID of the product to calculate the voting result for
      */
-    function calculateVotingResult(bytes4 productId) external {
+    function calculateVotingResult(bytes4 productId) external onlyMainEngine {
         ProductBase storage productBase = productsVotingInfo[productId];
 
         if (productBase.approved) {
@@ -124,7 +125,8 @@ contract VotingContract {
         }
 
         if (
-            IMainEngine(mainEngineAddress).getProductBaseInfo(productId).productSubmittedTime + 1 days < block.timestamp
+            IMainEngine(mainEngineAddress).getProductBaseInfo(productId).productSubmittedTime + VOTING_DURATION
+                < block.timestamp
         ) {
             revert VotingContract__VotingOnGoing(productId);
         }
@@ -162,6 +164,14 @@ contract VotingContract {
 
     function getProductVotingInfo(bytes4 productId) external view returns (ProductBase memory) {
         return productsVotingInfo[productId];
+    }
+
+    function getVotingDuration() external pure returns (uint256) {
+        return VOTING_DURATION;
+    }
+
+    function isApproved(bytes4 productId) external view returns (bool) {
+        return productsVotingInfo[productId].approved;
     }
 
     /**

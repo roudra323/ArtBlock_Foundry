@@ -24,7 +24,12 @@
 pragma solidity ^0.8.23;
 
 import { CustomERC20Token } from "./CustomERC20Token.sol";
-import { ArtBlockGovernance } from "./ArtBlockGovernance.sol";
+
+interface IVotingContract {
+    function isApproved(bytes4 productId) external view returns (bool);
+    function calculateVotingResult(bytes4 productId) external;
+    function getVotingDuration() external pure returns (uint256);
+}
 
 contract MainEngine {
     ///////////////
@@ -34,6 +39,9 @@ contract MainEngine {
     error MainEngine__InSufficientAmount();
     error MainEngine__JoinCommunityFailed();
     error MainEngine__AlreadyAMember();
+    error MainEngine__ProductAlreadyExists();
+    error MainEngine__ProductNotApproved();
+    error MainEngine__UnAuthorised();
 
     /////////////////////////
     //   State Variables  //
@@ -41,7 +49,10 @@ contract MainEngine {
 
     address private immutable creatorProtocol;
     CustomERC20Token private immutable artBlockToken;
-    ArtBlockGovernance private immutable governance;
+    address private govContract;
+    address private votingContractAddr;
+
+    uint256 private PRECESSION = 10 ** 8;
 
     //////////////////////
     ////// Structs  //////
@@ -58,6 +69,7 @@ contract MainEngine {
 
     struct ProductBase {
         uint256 stakeAmount;
+        bool stackReturned;
         uint256 upvotes;
         uint256 downvotes;
         uint256 productSubmittedTime;
@@ -67,7 +79,9 @@ contract MainEngine {
 
     struct Product {
         string metadata; // Metadata about the product (e.g., title, description, URL)
+        uint256 price; // Price of the product
         bool isListedForResell;
+        bool isListedOnMarketPlace;
         address author;
         address currentOwner;
         address currentCommunity;
@@ -83,11 +97,12 @@ contract MainEngine {
     mapping(address user => mapping(address communityToken => bool isMember)) public isCommunityMember;
     mapping(bytes32 productId => ProductBase) public productBaseInfo;
     mapping(bytes32 productId => Product) public productInfo;
-    mapping(address user => bytes4[] userProducts) public userProducts;
+    mapping(address user => mapping(address communityToken => bytes4[] userProducts)) public userProducts;
+    mapping(address user => mapping(address communityToken => bytes4[] buyedProducts)) public userBuyedProducts;
 
     /////////////////////
-    ////// Arrays  /////
-    ////////////////////
+    ////// Arrays  //////
+    /////////////////////
     address[] public communityTokens;
 
     ////////////////
@@ -101,13 +116,32 @@ contract MainEngine {
     event ProductSubmitted(bytes32 indexed productId, address indexed author, uint256 indexed stakeAmount);
 
     /////////////////
+    //  Modifiers  //
+    /////////////////
+
+    modifier onlyDeployer() {
+        require(msg.sender == creatorProtocol, "MainEngine: Only Deployer can call");
+        _;
+    }
+
+    modifier productIsApprovedANDExists(bytes4 productId) {
+        ProductBase storage tempProdBaseInfo = productBaseInfo[productId];
+        if (!tempProdBaseInfo.exists) {
+            revert MainEngine__ProductNotApproved();
+        }
+        if (!IVotingContract(votingContractAddr).isApproved(productId)) {
+            revert MainEngine__ProductNotApproved();
+        }
+        _;
+    }
+
+    /////////////////
     //  Functions  //
     /////////////////
 
     constructor() {
         creatorProtocol = msg.sender;
         artBlockToken = new CustomERC20Token("ARTBLOCKTOKEN", "ABT", creatorProtocol);
-        governance = new ArtBlockGovernance();
     }
 
     //////////////////////////
@@ -166,7 +200,7 @@ contract MainEngine {
         emit JoinedCommunity(msg.sender, tokenAddress);
     }
 
-    /*
+    /**
      * @notice Function to buy ArtBlock token by sending ether
      * @param to address of the user who is buying the ArtBlock token
      * @param amount number of ArtBlock tokens to buy
@@ -202,15 +236,23 @@ contract MainEngine {
         CustomERC20Token(communityToken).mint(to, amount);
     }
 
-    function submitProduct(string memory metadata, uint256 stakeAmount, address commToken) external {
+    function submitNewProduct(string memory metadata, address commToken, uint256 price, bool isExclusive) external {
+        if (communityInfo[commToken].communityCreator != msg.sender) {
+            revert MainEngine__UnAuthorised();
+        }
+
         // Generate a unique product ID using keccak256
-        bytes4 productId = bytes4(keccak256(abi.encodePacked(msg.sender, block.timestamp, metadata)));
+        bytes4 productId = bytes4(keccak256(abi.encodePacked(msg.sender, block.timestamp, metadata, price, commToken)));
 
         require(!productBaseInfo[productId].exists, "Product already exists");
-        CustomERC20Token(commToken).transferFrom(msg.sender, address(this), stakeAmount);
+
+        uint256 stakedAmount = getStackAmountFromPrice(price, isExclusive);
+
+        CustomERC20Token(commToken).transferFrom(msg.sender, address(this), stakedAmount);
 
         productBaseInfo[productId] = ProductBase({
-            stakeAmount: stakeAmount,
+            stakeAmount: stakedAmount,
+            stackReturned: false,
             upvotes: 0,
             downvotes: 0,
             approved: false,
@@ -220,15 +262,65 @@ contract MainEngine {
 
         productInfo[productId] = Product({
             metadata: metadata,
+            price: price,
             isListedForResell: false,
+            isListedOnMarketPlace: false,
             author: msg.sender,
             currentOwner: msg.sender,
             currentCommunity: commToken
         });
 
-        userProducts[msg.sender].push(productId);
+        userProducts[msg.sender][commToken].push(productId);
 
-        emit ProductSubmitted(productId, msg.sender, stakeAmount);
+        emit ProductSubmitted(productId, msg.sender, price);
+    }
+
+    function checkProductApproval(bytes4 productId) external returns (bool status) {
+        status = IVotingContract(votingContractAddr).isApproved(productId);
+        if (status) {
+            ProductBase storage tempProdInfo = productBaseInfo[productId];
+            if (!tempProdInfo.stackReturned) {
+                tempProdInfo.stackReturned = true;
+                CustomERC20Token(productInfo[productId].currentCommunity).transfer(
+                    productInfo[productId].currentOwner, productBaseInfo[productId].stakeAmount
+                );
+                tempProdInfo.approved = true;
+            }
+        } else {
+            if (
+                productBaseInfo[productId].productSubmittedTime
+                    + IVotingContract(votingContractAddr).getVotingDuration() < block.timestamp
+            ) {
+                // If the product is not approved within 7 days then the product is not approved
+                revert MainEngine__ProductNotApproved();
+            } else {
+                IVotingContract(votingContractAddr).calculateVotingResult(productId);
+            }
+        }
+    }
+
+    /////////////////////////////
+    /////  Internal Functions  //
+    /////////////////////////////
+
+    function getStackAmountFromPrice(uint256 price, bool isExclusive) internal view returns (uint256) {
+        if (isExclusive) {
+            return (price * 3 * PRECESSION) / 10; // If the product is exclusive then the stake amount is 30% of the
+                // price
+        }
+        return (price * 15 * PRECESSION) / 100; // If the product is not exclusive then the stake amount is 15% of the
+            // price
+    }
+
+    /////////////////////////////
+    /////  Setter Functions  ////
+    /////////////////////////////
+    function setVotingContract(address votingContract) external onlyDeployer {
+        votingContractAddr = votingContract;
+    }
+
+    function setGovernanceContract(address governanceContract) external onlyDeployer {
+        govContract = governanceContract;
     }
 
     /////////////////////////////
