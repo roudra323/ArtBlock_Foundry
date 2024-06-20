@@ -21,6 +21,14 @@ contract ArtBlockNFT is ERC721, ERC721Enumerable, ERC721URIStorage, Ownable {
         productToTokenId[productId] = tokenId;
     }
 
+    function safeTransfer(address from, address to, uint256 tokenId) external onlyOwner {
+        safeTransferFrom(from, to, tokenId);
+    }
+
+    function getTokenId(bytes4 tokenId) external view returns (uint256) {
+        return productToTokenId[tokenId];
+    }
+
     // The following functions are overrides required by Solidity.
 
     function _update(

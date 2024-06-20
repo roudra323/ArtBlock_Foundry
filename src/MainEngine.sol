@@ -33,6 +33,8 @@ interface IVotingContract {
 
 interface IArtBlockNFT {
     function safeMint(address to, string memory uri, bytes4 productId) external;
+    function safeTransfer(address from, address to, uint256 tokenId) external;
+    function getTokenId(bytes4 tokenId) external view returns (uint256);
 }
 
 /**
@@ -214,6 +216,13 @@ contract MainEngine {
     modifier isOwner(bytes4 productId) {
         if (productInfo[productId].currentOwner != msg.sender) {
             revert MainEngine__UnAuthorised();
+        }
+        _;
+    }
+
+    modifier hasEnoughBalanceToBuy(bytes4 productId, address communityToken) {
+        if (CustomERC20Token(communityToken).balanceOf(msg.sender) < productInfo[productId].price) {
+            revert MainEngine__InSufficientAmount();
         }
         _;
     }
@@ -428,6 +437,11 @@ contract MainEngine {
             );
     }
 
+    /**
+     * @notice Function to list the product in the marketplace.
+     * @param productId The ID of the product for which to calculate the voting result.
+     * @param commToken The address of the community token.
+     */
     function listProductToMarketPlace(
         bytes4 productId,
         address commToken
@@ -442,6 +456,36 @@ contract MainEngine {
         }
         productInfo[productId].isListedOnMarketPlace = true;
         productInfo[productId].currentCommunity = commToken;
+    }
+
+    /**
+     * @notice Function to buy a product.
+     * @param productId  The ID of the product to buy.
+     * @param communityToken  The address of the community token.
+     */
+    function buyProduct(
+        bytes4 productId,
+        address communityToken
+    )
+        public
+        hasEnoughBalanceToBuy(productId, communityToken)
+    {
+        Product memory product = productInfo[productId];
+        if (product.isListedOnMarketPlace && isCommunityMember[msg.sender][communityToken]) {
+            CustomERC20Token(communityToken).transferFrom(msg.sender, product.currentOwner, product.price);
+
+            if (productBaseInfo[productId].isExclusive) {
+                IArtBlockNFT(artBlockNFTContract).safeTransfer(
+                    product.currentOwner, msg.sender, IArtBlockNFT(artBlockNFTContract).getTokenId(productId)
+                );
+            }
+
+            productInfo[productId].currentOwner = msg.sender;
+            productInfo[productId].currentCommunity = address(0);
+            productInfo[productId].isListedOnMarketPlace = false;
+
+            userBuyedProducts[msg.sender][communityToken].push(productId);
+        }
     }
 
     /////////////////////////////
