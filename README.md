@@ -104,13 +104,14 @@ $ forge snapshot
 ```shell
 $ anvil
 ```
-
+<!-- 
+ Needed to fix this
 7. **Deploy**
 
 ```shell
 $ forge script script/Counter.s.sol:CounterScript --rpc-url <your_rpc_url> --private-key <your_private_key>
 ```
-
+-->
 ## Contributing
 We welcome contributions to the ArtBlock Platform! Please fork the repository and submit pull requests for any improvements or bug fixes. Ensure your code follows our coding standards and includes appropriate tests.
 
