@@ -11,6 +11,7 @@ contract MainEngineTest is Test {
     MainEngine mainEngine;
     CustomERC20Token artBlockToken;
 
+    uint256 private PRECESSION = 10 ** 18;
     uint256 private immutable STARTING_BUYING_AMOUNT_ERC20 = 2000;
     uint256 private immutable TOTAL_AMOUNT_TO_PAY = 1000 wei * STARTING_BUYING_AMOUNT_ERC20;
 
@@ -47,7 +48,7 @@ contract MainEngineTest is Test {
         // Call the buyArtBlockToken function with the required amount of Ether
         mainEngine.buyArtBlockToken{ value: tokenAmount }(USER, amount);
         // Add assertions to verify the expected behavior
-        assertEq(artBlockToken.balanceOf(USER), amount, "Incorrect token balance");
+        assertEq(artBlockToken.balanceOf(USER), amount * PRECESSION, "Incorrect token balance");
     }
 
     modifier buyArtBlockToken(address toAccount) {
@@ -75,13 +76,17 @@ contract MainEngineTest is Test {
         string memory communityDescription = "People can sell their art here";
         string memory tokenName = "PeopleArtToken";
         string memory tokenSymbol = "PAT";
+
+        // Approving Main Engine contract
+        artBlockToken.approve(address(mainEngine), STARTING_BUYING_AMOUNT_ERC20);
+
         mainEngine.createCommunity(communityName, communityDescription, tokenName, tokenSymbol, COMMUNITY_CREATOR);
         // address communityTokenAddress = mainEngine.communityTokens(0);
         (string memory name,,,,,) = mainEngine.creatorCommunities(COMMUNITY_CREATOR, 0);
         assertEq(name, communityName);
     }
 
-    function testFailsToCreateCommunityWithInsufficientBalance() public startsPrank(USER) {
+    function testCreateCommunityWithInsufficientBalance() public startsPrank(USER) {
         string memory communityName = "ART Community";
         string memory communityDescription = "People can sell their art here";
         string memory tokenName = "PeopleArtToken";
@@ -97,16 +102,31 @@ contract MainEngineTest is Test {
         string memory communityDescription = "People can sell their art here";
         string memory tokenName = "PeopleArtToken";
         string memory tokenSymbol = "PAT";
+        artBlockToken.approve(address(mainEngine), STARTING_BUYING_AMOUNT_ERC20);
         mainEngine.createCommunity(communityName, communityDescription, tokenName, tokenSymbol, COMMUNITY_CREATOR);
         vm.stopPrank();
         _;
     }
+
+    ///////////////////////////////
+    //// Test Join Community //////
+    ///////////////////////////////
 
     function testJoinCommunity() public buyArtBlockToken(COMMUNITY_CREATOR) createCommunity {
         address communityTokenAddress = mainEngine.communityTokens(0);
         vm.prank(USER_2);
         mainEngine.joinCommunity(communityTokenAddress);
         assertEq(mainEngine.isCommunityMember(USER_2, communityTokenAddress), true);
+    }
+
+    function testJoinMultipleUsersToCommunity() public buyArtBlockToken(COMMUNITY_CREATOR) createCommunity {
+        address communityTokenAddress = mainEngine.communityTokens(0);
+        for (uint256 i = 1; i <= 5; i++) {
+            address user = address(uint160(i));
+            vm.prank(user);
+            mainEngine.joinCommunity(communityTokenAddress);
+            assertEq(mainEngine.isCommunityMember(user, mainEngine.communityTokens(0)), true);
+        }
     }
 
     function testMemberReturnesTrueIfJoinedCommunity() public buyArtBlockToken(COMMUNITY_CREATOR) createCommunity {

@@ -80,9 +80,10 @@ contract MainEngine {
     address private votingContractAddr;
     /// @notice Address of the ArtBlock NFT contract.
     address private artBlockNFTContract;
-
     /// @notice Precision value for token calculations.
     uint256 private PRECESSION = 10 ** 18;
+
+    uint256 private constant COMMUNITY_CREATION_FEE = 1000;
 
     //////////////////////
     ////// Structs  //////
@@ -237,7 +238,7 @@ contract MainEngine {
      */
     constructor() {
         creatorProtocol = msg.sender;
-        artBlockToken = new CustomERC20Token("ARTBLOCKTOKEN", "ABT", creatorProtocol);
+        artBlockToken = new CustomERC20Token("ARTBLOCKTOKEN", "ABT", address(this));
     }
 
     //////////////////////////
@@ -263,10 +264,10 @@ contract MainEngine {
         payable
     {
         // Minimum amount to create a community is 1000 ABT
-        if (artBlockToken.balanceOf(communityCreator) < 1000) {
+        if (artBlockToken.balanceOf(communityCreator) < COMMUNITY_CREATION_FEE) {
             revert MainEngine__InSufficientAmount();
         }
-        artBlockToken.burnFrom(communityCreator, 1000);
+        artBlockToken.transferFrom(communityCreator, address(this), COMMUNITY_CREATION_FEE);
         CustomERC20Token communityToken = new CustomERC20Token(tokenName, tokenSymbol, communityCreator);
         communityTokens.push(address(communityToken));
         CommunityInfo memory newCommunity =
@@ -312,7 +313,7 @@ contract MainEngine {
         if (!success) {
             revert MainEngine__TransferFailed();
         }
-        artBlockToken.mint(to, amount);
+        artBlockToken.mint(to, amount * PRECESSION);
         emit ABTBoughtByUser(to, amount);
     }
 
@@ -328,7 +329,7 @@ contract MainEngine {
             revert MainEngine__InSufficientAmount();
         }
         artBlockToken.burnFrom(to, amount);
-        CustomERC20Token(communityToken).mint(to, amount);
+        CustomERC20Token(communityToken).mint(to, amount * PRECESSION);
     }
 
     /**
@@ -472,6 +473,12 @@ contract MainEngine {
     {
         Product memory product = productInfo[productId];
         if (product.isListedOnMarketPlace && isCommunityMember[msg.sender][communityToken]) {
+            if (product.currentOwner != product.author) {
+                CustomERC20Token(communityToken).transferFrom(msg.sender, product.author, product.price / 100);
+                CustomERC20Token(communityToken).transferFrom(
+                    msg.sender, product.currentOwner, (product.price * 99) / 100
+                );
+            }
             CustomERC20Token(communityToken).transferFrom(msg.sender, product.currentOwner, product.price);
 
             if (productBaseInfo[productId].isExclusive) {

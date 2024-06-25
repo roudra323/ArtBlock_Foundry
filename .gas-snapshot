@@ -1,0 +1,8 @@
+MainEngineTest:testBuyArtBlockToken() (gas: 84605)
+MainEngineTest:testCreateCommunity() (gas: 1101027)
+MainEngineTest:testCreateCommunityWithInsufficientBalance() (gas: 17709)
+MainEngineTest:testCreatorBalanceAfterTokenSold() (gas: 79357)
+MainEngineTest:testFailToJoinCommunityIfAlreadyMember() (gas: 1165232)
+MainEngineTest:testGetAdderssOfProtocolCreator() (gas: 12779)
+MainEngineTest:testJoinCommunity() (gas: 1165655)
+MainEngineTest:testMemberReturnesTrueIfJoinedCommunity() (gas: 1165622)

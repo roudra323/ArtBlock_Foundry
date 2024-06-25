@@ -19,6 +19,7 @@ contract ArtBlockGovernance {
     error ArtBlockGovernance__InvalidProposalIndex();
     error ArtBlockGovernance__NotCommunityMember();
     error ArtBlockGovernance__RateChangeTooSoon();
+    error ArtBlockGovernance__InvalidRate();
 
     /////////////////////////
     //   State Variables  //
@@ -31,6 +32,10 @@ contract ArtBlockGovernance {
 
     uint256 private initialRateOfCommunityToken = 1;
 
+    uint256 public constant MIN_RATE = 0.5e18; // 0.5 ArtBlock per Community Token
+    uint256 public constant MAX_RATE = 2e18; // 2 ArtBlock per Community Token
+    uint256 public constant MAX_RATE_CHANGE = 0.1e18; // 10% max change per proposal
+
     //////////////////////
     ////// Structs  //////
     //////////////////////
@@ -42,6 +47,7 @@ contract ArtBlockGovernance {
         uint256 votesFor;
         uint256 votesAgainst;
         bool exists;
+        string reason;
     }
 
     //////////////////////
@@ -58,6 +64,7 @@ contract ArtBlockGovernance {
     ////////////////
     //  Modifiers //
     ////////////////
+
     modifier onlyMainEngine() {
         if (msg.sender != mainEngineAddress) {
             revert ArtBlockGovernance__OnlyMainEngineCanCall();
@@ -75,18 +82,28 @@ contract ArtBlockGovernance {
     /////////////////
     //  Functions  //
     /////////////////
+
     constructor() {
         mainEngineAddress = msg.sender;
-        // artBlockToken = IMainEngine(mainEngineAddress).getTokenAddress();
+        artBlockToken = IMainEngine(mainEngineAddress).getTokenAddress();
     }
 
     //////////////////////////
     //  External Functions  //
     //////////////////////////
+
+    /**
+     * @notice Propose a rate change for a community token
+     * @param communityToken Address of the community token
+     * @param proposedRate The proposed new rate
+     * @param votingDuration Duration of the voting period
+     * @param reason Reason for proposing the rate change
+     */
     function proposeRateChange(
         address communityToken,
         uint256 proposedRate,
-        uint256 votingDuration
+        uint256 votingDuration,
+        string memory reason
     )
         external
         onlyCommunityMember(communityToken)
@@ -95,71 +112,151 @@ contract ArtBlockGovernance {
             revert ArtBlockGovernance__RateChangeTooSoon();
         }
 
+        if (proposedRate < MIN_RATE || proposedRate > MAX_RATE) {
+            revert ArtBlockGovernance__InvalidRate();
+        }
+
         uint256 proposalIndex = rateChangeProposals.length;
-        initializeRateChangeProposal(proposalIndex, communityToken, proposedRate, block.timestamp + votingDuration);
+        initializeRateChangeProposal(
+            proposalIndex, communityToken, proposedRate, block.timestamp + votingDuration, reason
+        );
     }
 
-    function initializeRateChangeProposal(
-        uint256 proposalIndex,
-        address communityToken,
-        uint256 proposedRate,
-        uint256 votingEndTime
-    )
-        internal
-    {
-        RateChangeProposal storage proposal = rateChangeProposals[proposalIndex];
-        proposal.communityToken = communityToken;
-        proposal.proposedRate = proposedRate;
-        proposal.votingEndTime = votingEndTime;
-        proposal.exists = true;
-    }
-
+    /**
+     * @notice Vote on a rate change proposal
+     * @param proposalIndex Index of the proposal
+     * @param vote Boolean indicating whether to vote for (true) or against (false) the proposal
+     */
     function voteOnRateChange(uint256 proposalIndex, bool vote) external {
         if (proposalIndex >= rateChangeProposals.length) {
             revert ArtBlockGovernance__InvalidProposalIndex();
         }
 
-        RateChangeProposal storage proposal = rateChangeProposals[proposalIndex];
-        if (block.timestamp >= proposal.votingEndTime) {
+        if (block.timestamp >= rateChangeProposals[proposalIndex].votingEndTime) {
             revert ArtBlockGovernance__VotingEnded();
         }
-        if (proposal.votes[msg.sender]) {
+        if (rateChangeProposals[proposalIndex].votes[msg.sender]) {
             revert ArtBlockGovernance__AlreadyVoted();
         }
 
-        proposal.votes[msg.sender] = true;
+        rateChangeProposals[proposalIndex].votes[msg.sender] = true;
         if (vote) {
-            proposal.votesFor += 1;
+            rateChangeProposals[proposalIndex].votesFor +=
+                calculateVoteWeight(msg.sender, rateChangeProposals[proposalIndex].communityToken);
         } else {
-            proposal.votesAgainst += 1;
+            rateChangeProposals[proposalIndex].votesAgainst +=
+                calculateVoteWeight(msg.sender, rateChangeProposals[proposalIndex].communityToken);
         }
     }
 
+    /**
+     * @notice Finalize a rate change proposal after the voting period has ended
+     * @param proposalIndex Index of the proposal
+     */
     function finalizeRateChange(uint256 proposalIndex) external {
         if (proposalIndex >= rateChangeProposals.length) {
             revert ArtBlockGovernance__InvalidProposalIndex();
         }
 
-        RateChangeProposal storage proposal = rateChangeProposals[proposalIndex];
-        if (block.timestamp < proposal.votingEndTime) {
+        // RateChangeProposal memory proposal = rateChangeProposals[proposalIndex];
+        if (block.timestamp < rateChangeProposals[proposalIndex].votingEndTime) {
             revert ArtBlockGovernance__VotingOngoing();
         }
 
-        uint256 totalVotes = proposal.votesFor + proposal.votesAgainst;
+        uint256 totalVotes =
+            rateChangeProposals[proposalIndex].votesFor + rateChangeProposals[proposalIndex].votesAgainst;
         uint256 threshold = (totalVotes * 60 * VOTING_PRECISION) / 100; // Assuming 60% voting threshold
 
-        if (proposal.votesFor * VOTING_PRECISION >= threshold) {
-            communityTokenRate[proposal.communityToken] = proposal.proposedRate;
-            lastRateChangeTime[proposal.communityToken] = block.timestamp;
+        if (rateChangeProposals[proposalIndex].votesFor * VOTING_PRECISION >= threshold) {
+            communityTokenRate[rateChangeProposals[proposalIndex].communityToken] =
+                rateChangeProposals[proposalIndex].proposedRate;
+            lastRateChangeTime[rateChangeProposals[proposalIndex].communityToken] = block.timestamp;
         }
     }
 
-    function updateCommunityTokenRate(address communityToken, uint256 newRate) public onlyMainEngine {
+    /**
+     * @notice Update the rate of a community token (can only be called by the main engine)
+     * @param communityToken Address of the community token
+     * @param newRate New rate to set
+     */
+    function updateCommunityTokenRate(address communityToken, uint256 newRate) external onlyMainEngine {
         communityTokenRate[communityToken] = newRate;
         lastRateChangeTime[communityToken] = block.timestamp;
     }
 
+    //////////////////////////
+    //  internal Functions  //
+    //////////////////////////
+
+    /**
+     * @notice Initialize a new rate change proposal
+     * @param proposalIndex Index of the proposal
+     * @param communityToken Address of the community token
+     * @param proposedRate Proposed new rate
+     * @param votingEndTime End time of the voting period
+     * @param reason Reason for proposing the rate change
+     */
+    function initializeRateChangeProposal(
+        uint256 proposalIndex,
+        address communityToken,
+        uint256 proposedRate,
+        uint256 votingEndTime,
+        string memory reason
+    )
+        internal
+    {
+        rateChangeProposals[proposalIndex].communityToken = communityToken;
+        rateChangeProposals[proposalIndex].proposedRate = proposedRate;
+        rateChangeProposals[proposalIndex].votingEndTime = votingEndTime;
+        rateChangeProposals[proposalIndex].exists = true;
+        rateChangeProposals[proposalIndex].reason = reason;
+
+        communityTokenRate[communityToken] = proposedRate;
+    }
+
+    /**
+     * @notice Calculate the vote weight based on user's token balances
+     * @param user Address of the user
+     * @param community Address of the community token
+     * @return totalVotes Calculated vote weight
+     */
+    function calculateVoteWeight(address user, address community) internal view returns (uint256 totalVotes) {
+        uint256 userCommunitytoken = IERC20(community).balanceOf(user);
+        uint256 userArtBlockToken = IERC20(artBlockToken).balanceOf(user);
+        uint256 communityTokenWeight = (userCommunitytoken * 6) / 10; // 60% weightage of the community token
+        uint256 artblockTokenWeight = (userArtBlockToken * 4) / 10; // 40% weightage of the artblock token
+        totalVotes = (communityTokenWeight + artblockTokenWeight);
+    }
+
+    /////////////////////////////
+    //  view & pure functions  //
+    /////////////////////////////
+
+    /**
+     * @notice Get the current rate of a community token
+     * @param communityToken Address of the community token
+     * @return Current rate of the community token
+     */
     function getCommunityTokenRate(address communityToken) external view returns (uint256) {
         return communityTokenRate[communityToken];
+    }
+
+    /**
+     * @notice Check if a community token is ready for a rate change
+     * @param communityToken Address of the community token
+     * @return Boolean indicating if the community token is ready for a rate change
+     */
+    function isReadyForRateChange(address communityToken) external view returns (bool) {
+        return block.timestamp >= lastRateChangeTime[communityToken] + RATE_CHANGE_COOLDOWN;
+    }
+
+    /**
+     * @notice Check if a rate change proposal is ready to be initiated
+     * @param proposalIndex Index of the proposal
+     * @return Boolean indicating if the proposal is ready to be initiated
+     */
+    function isReadyToInitiateRateChange(uint256 proposalIndex) external view returns (bool) {
+        return proposalIndex < rateChangeProposals.length
+            && block.timestamp >= rateChangeProposals[proposalIndex].votingEndTime;
     }
 }
