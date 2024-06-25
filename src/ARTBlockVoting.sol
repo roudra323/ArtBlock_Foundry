@@ -150,10 +150,10 @@ contract VotingContract {
     function calculateVoteWeight(address user, address community) internal view returns (uint256 totalVotes) {
         uint256 userCommunitytoken = IERC20(community).balanceOf(user);
         uint256 userArtBlockToken = IERC20(artBlockToken).balanceOf(user);
-        uint256 communityTokenWeight = (userCommunitytoken * 7 * VOTING_PRECISION) / 10; // 70% weightage of the
+        uint256 communityTokenWeight = (userCommunitytoken * 6 * VOTING_PRECISION) / 10; // 60% weightage of the
             // community token
 
-        uint256 artblockTokenWeight = (userArtBlockToken * 3 * VOTING_PRECISION) / 10; // 30% weightage of the artblock
+        uint256 artblockTokenWeight = (userArtBlockToken * 4 * VOTING_PRECISION) / 10; // 40% weightage of the artblock
             // token
         totalVotes = (communityTokenWeight + artblockTokenWeight);
     }

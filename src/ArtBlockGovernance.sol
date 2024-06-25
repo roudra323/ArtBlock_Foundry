@@ -20,6 +20,7 @@ contract ArtBlockGovernance {
     error ArtBlockGovernance__NotCommunityMember();
     error ArtBlockGovernance__RateChangeTooSoon();
     error ArtBlockGovernance__InvalidRate();
+    error ArtBlockGovernance__DidntMeetThreshold();
 
     /////////////////////////
     //   State Variables  //
@@ -28,6 +29,7 @@ contract ArtBlockGovernance {
     address private immutable artBlockToken;
 
     uint256 private constant VOTING_PRECISION = 10e8;
+    uint256 private constant PRECISION = 10e18;
     uint256 private constant RATE_CHANGE_COOLDOWN = 2 weeks;
 
     uint256 private initialRateOfCommunityToken = 1;
@@ -165,13 +167,15 @@ contract ArtBlockGovernance {
 
         uint256 totalVotes =
             rateChangeProposals[proposalIndex].votesFor + rateChangeProposals[proposalIndex].votesAgainst;
-        uint256 threshold = (totalVotes * 60 * VOTING_PRECISION) / 100; // Assuming 60% voting threshold
+        uint256 threshold = (totalVotes * 60 * VOTING_PRECISION) / (100 * PRECISION); // Assuming 60% voting threshold
 
-        if (rateChangeProposals[proposalIndex].votesFor * VOTING_PRECISION >= threshold) {
-            communityTokenRate[rateChangeProposals[proposalIndex].communityToken] =
-                rateChangeProposals[proposalIndex].proposedRate;
-            lastRateChangeTime[rateChangeProposals[proposalIndex].communityToken] = block.timestamp;
+        if ((rateChangeProposals[proposalIndex].votesFor * VOTING_PRECISION) / PRECISION < threshold) {
+            revert ArtBlockGovernance__DidntMeetThreshold();
         }
+
+        communityTokenRate[rateChangeProposals[proposalIndex].communityToken] =
+            rateChangeProposals[proposalIndex].proposedRate;
+        lastRateChangeTime[rateChangeProposals[proposalIndex].communityToken] = block.timestamp;
     }
 
     /**

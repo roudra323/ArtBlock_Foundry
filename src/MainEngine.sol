@@ -582,4 +582,8 @@ contract MainEngine {
     function getProductBaseInfo(bytes4 productId) external view returns (ProductBase memory) {
         return productBaseInfo[productId];
     }
+
+    function getTotalMemberOfCommunity(address communityToken) public view returns (uint256) {
+        return communityInfo[communityToken].totalMembers;
+    }
 }
