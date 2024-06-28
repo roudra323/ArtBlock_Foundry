@@ -31,6 +31,7 @@ contract ArtBlockGovernance {
     uint256 private constant VOTING_PRECISION = 10e8;
     uint256 private constant PRECISION = 10e18;
     uint256 private constant RATE_CHANGE_COOLDOWN = 2 weeks;
+    uint256 private constant VOTING_DURATION = 14 days;
 
     uint256 private initialRateOfCommunityToken = 1;
 
@@ -98,13 +99,11 @@ contract ArtBlockGovernance {
      * @notice Propose a rate change for a community token
      * @param communityToken Address of the community token
      * @param proposedRate The proposed new rate
-     * @param votingDuration Duration of the voting period
      * @param reason Reason for proposing the rate change
      */
     function proposeRateChange(
         address communityToken,
         uint256 proposedRate,
-        uint256 votingDuration,
         string memory reason
     )
         external
@@ -120,7 +119,7 @@ contract ArtBlockGovernance {
 
         uint256 proposalIndex = rateChangeProposals.length;
         initializeRateChangeProposal(
-            proposalIndex, communityToken, proposedRate, block.timestamp + votingDuration, reason
+            proposalIndex, communityToken, proposedRate, block.timestamp + VOTING_DURATION, reason
         );
     }
 
@@ -214,7 +213,6 @@ contract ArtBlockGovernance {
         rateChangeProposals[proposalIndex].votingEndTime = votingEndTime;
         rateChangeProposals[proposalIndex].exists = true;
         rateChangeProposals[proposalIndex].reason = reason;
-
         communityTokenRate[communityToken] = proposedRate;
     }
 

@@ -95,7 +95,7 @@ contract VotingContract {
      * @param isUPVote Boolean indicating if the vote is an upvote
      */
     function voteForProduct(bytes4 productId, address communityToken, bool isUPVote) external {
-        ProductBase storage productBase = productsVotingInfo[productId];
+        ProductBase memory productBase = productsVotingInfo[productId];
 
         if (!IMainEngine(mainEngineAddress).getProductBaseInfo(productId).exists) {
             revert VotingContract__ProductDoesntExist(productId);
@@ -117,8 +117,8 @@ contract VotingContract {
      * @notice Calculate the voting result for a product
      * @param productId ID of the product to calculate the voting result for
      */
-    function calculateVotingResult(bytes4 productId) external onlyMainEngine {
-        ProductBase storage productBase = productsVotingInfo[productId];
+    function calculateVotingResult(bytes4 productId) external view onlyMainEngine {
+        ProductBase memory productBase = productsVotingInfo[productId];
 
         if (productBase.approved) {
             revert VotingContract__ProductAlreadyApproved(productId);

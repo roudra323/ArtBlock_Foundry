@@ -65,6 +65,10 @@ contract MainEngine {
     error MainEngine__VotingOngoing();
     /// @notice Error indicating that the user is unauthorized to perform an action.
     error MainEngine__UnAuthorised();
+    /// @notice Error indicating that the user is unauthorized to perform an action.
+    error MainEngine__ProductIsInMarketPlace();
+    /// @notice Error indicating that the user has not met the threshold.
+    error MainEngine__UserActivityPointIsLOW();
 
     /////////////////////////
     //   State Variables  //
@@ -142,6 +146,10 @@ contract MainEngine {
     mapping(address => mapping(address => bytes4[])) public userProducts;
     /// @notice Mapping from user address and community token address to a list of products they have bought.
     mapping(address => mapping(address => bytes4[])) public userBuyedProducts;
+    /// @notice Mapping from user address and community token address to a count activity points.
+    mapping(address => mapping(address => uint256)) public userActivityPoints;
+    /// @notice Mapping from community token address to a community activity points.
+    mapping(address => uint256) public communityActivityPoints;
 
     /////////////////////
     ////// Arrays  //////
@@ -224,6 +232,19 @@ contract MainEngine {
     modifier hasEnoughBalanceToBuy(bytes4 productId, address communityToken) {
         if (CustomERC20Token(communityToken).balanceOf(msg.sender) < productInfo[productId].price) {
             revert MainEngine__InSufficientAmount();
+        }
+        _;
+    }
+
+    modifier canPostProductToSell(bytes4 productId) {
+        if (productInfo[productId].currentOwner != msg.sender) {
+            revert MainEngine__UnAuthorised();
+        }
+        if (productInfo[productId].isListedOnMarketPlace) {
+            revert MainEngine__ProductIsInMarketPlace();
+        }
+        if (productInfo[productId].currentCommunity != address(0)) {
+            revert MainEngine__ProductIsInMarketPlace();
         }
         _;
     }
@@ -452,11 +473,14 @@ contract MainEngine {
         productIsApprovedANDExists(productId)
         isOwner(productId)
     {
-        if (productBaseInfo[productId].isExclusive) {
-            IArtBlockNFT(artBlockNFTContract).safeMint(msg.sender, productInfo[productId].metadata, productId);
+        Product memory product = productInfo[productId];
+        if (product.currentOwner != product.author) {
+            if (productBaseInfo[productId].isExclusive) {
+                IArtBlockNFT(artBlockNFTContract).safeMint(msg.sender, productInfo[productId].metadata, productId);
+            }
+            productInfo[productId].isListedOnMarketPlace = true;
+            productInfo[productId].currentCommunity = commToken;
         }
-        productInfo[productId].isListedOnMarketPlace = true;
-        productInfo[productId].currentCommunity = commToken;
     }
 
     /**
@@ -469,17 +493,19 @@ contract MainEngine {
         address communityToken
     )
         public
+        productIsApprovedANDExists(productId)
         hasEnoughBalanceToBuy(productId, communityToken)
     {
         Product memory product = productInfo[productId];
         if (product.isListedOnMarketPlace && isCommunityMember[msg.sender][communityToken]) {
             if (product.currentOwner != product.author) {
-                CustomERC20Token(communityToken).transferFrom(msg.sender, product.author, product.price / 100);
+                CustomERC20Token(communityToken).transferFrom(msg.sender, product.author, (product.price * 3) / 100);
                 CustomERC20Token(communityToken).transferFrom(
-                    msg.sender, product.currentOwner, (product.price * 99) / 100
+                    msg.sender, product.currentOwner, (product.price * 97) / 100
                 );
+            } else {
+                CustomERC20Token(communityToken).transferFrom(msg.sender, product.currentOwner, product.price);
             }
-            CustomERC20Token(communityToken).transferFrom(msg.sender, product.currentOwner, product.price);
 
             if (productBaseInfo[productId].isExclusive) {
                 IArtBlockNFT(artBlockNFTContract).safeTransfer(
@@ -492,7 +518,37 @@ contract MainEngine {
             productInfo[productId].isListedOnMarketPlace = false;
 
             userBuyedProducts[msg.sender][communityToken].push(productId);
+            increasePoints(msg.sender, communityToken);
         }
+    }
+
+    /**
+     * @param productId The ID of the product to vote for.
+     * @param price     The price of the product.
+     * @param community The address of the community token.
+     */
+    function sellProdToComm(
+        bytes4 productId,
+        uint256 price,
+        address community
+    )
+        external
+        productIsApprovedANDExists(productId)
+        canPostProductToSell(productId)
+        isOwner(productId)
+    {
+        if (getUserActivityPoints(msg.sender, community) < 10) {
+            revert MainEngine__UserActivityPointIsLOW();
+        }
+
+        productInfo[productId].price = price;
+        // transfer 3% of product price to the community creator
+        CustomERC20Token(community).transfer(communityInfo[community].communityCreator, (price * 3) / 100);
+        productInfo[productId].isListedOnMarketPlace = true;
+        productInfo[productId].currentCommunity = community;
+
+        // increase activity points
+        increasePoints(msg.sender, community);
     }
 
     /////////////////////////////
@@ -514,6 +570,16 @@ contract MainEngine {
                 // the
                 // price
         }
+    }
+
+    /**
+     * @notice Internal function to increase the activity points.
+     * @param user The address of the user.
+     * @param communityToken The address of the community token.
+     */
+    function increasePoints(address user, address communityToken) internal {
+        userActivityPoints[user][communityToken] += 1;
+        communityActivityPoints[communityToken] += 1;
     }
 
     /////////////////////////////
@@ -585,5 +651,13 @@ contract MainEngine {
 
     function getTotalMemberOfCommunity(address communityToken) public view returns (uint256) {
         return communityInfo[communityToken].totalMembers;
+    }
+
+    function getUserActivityPoints(address user, address communityToken) public view returns (uint256) {
+        return userActivityPoints[user][communityToken];
+    }
+
+    function getCommunityActivityPoints(address communityToken) public view returns (uint256) {
+        return communityActivityPoints[communityToken];
     }
 }
