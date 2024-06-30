@@ -23,6 +23,7 @@
 
 pragma solidity ^0.8.23;
 
+import "@openzeppelin/contracts/utils/math/Math.sol";
 import { CustomERC20Token } from "./CustomERC20Token.sol";
 
 interface IVotingContract {
@@ -43,6 +44,8 @@ interface IArtBlockNFT {
  * @dev Integrates with CustomERC20Token and IVotingContract.
  */
 contract MainEngine {
+    using Math for uint256;
+
     ///////////////
     /// Errors ////
     ///////////////
@@ -89,7 +92,7 @@ contract MainEngine {
     /// @notice Minimum amount to create a community.
     uint256 private constant COMMUNITY_CREATION_FEE = 1000;
     /// @notice Rate of the platform native token.
-    uint256 public baseRate = 1 ether;
+    uint256 public baseRate = 0.5 ether;
     /// @notice Exponent value for token calculations.
     uint256 public exponent = 1;
     /// @notice Rate of the community token.
@@ -329,8 +332,9 @@ contract MainEngine {
      * @param amount The number of ArtBlock tokens to buy.
      */
     function buyArtBlockToken(address to, uint256 amount) public payable {
+        require(amount > 0, "Amount must be greater than zero");
         // Implemented bonding curve
-        uint256 currentSupply = artBlockToken.totalSupply();
+        uint256 currentSupply = artBlockToken.totalSupply() == 0 ? 1 : artBlockToken.totalSupply();
         uint256 pricePerToken = baseRate * (currentSupply ** exponent);
         uint256 totalCost = pricePerToken * amount;
 
@@ -338,12 +342,15 @@ contract MainEngine {
         if (totalCost != msg.value) {
             revert MainEngine__InSufficientAmount();
         }
+        // Mint tokens before transferring Ether to avoid reentrancy issues
+        artBlockToken.mint(to, amount * PRECESSION);
+
         (bool success,) = creatorProtocol.call{ value: totalCost }("");
         // check if the transfer of ABT is successful
         if (!success) {
             revert MainEngine__TransferFailed();
         }
-        artBlockToken.mint(to, amount * PRECESSION);
+
         emit ABTBoughtByUser(to, amount);
     }
 

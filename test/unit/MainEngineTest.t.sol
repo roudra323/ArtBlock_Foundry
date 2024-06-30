@@ -11,9 +11,14 @@ contract MainEngineTest is Test {
     MainEngine mainEngine;
     CustomERC20Token artBlockToken;
 
+    uint256 private baseRate = 0.5 ether;
+    uint256 pricePerToken = baseRate * 1;
+
     uint256 private PRECESSION = 10 ** 18;
     uint256 private immutable STARTING_BUYING_AMOUNT_ERC20 = 2000;
-    uint256 private immutable TOTAL_AMOUNT_TO_PAY = 1000 wei * STARTING_BUYING_AMOUNT_ERC20;
+    uint256 private immutable TOTAL_AMOUNT_TO_PAY = pricePerToken * STARTING_BUYING_AMOUNT_ERC20;
+
+    // uint256 totalCost = pricePerToken * STARTING_BUYING_AMOUNT_ERC20;
 
     address private immutable creatorProtocol = makeAddr("CREATOR");
     address private immutable USER = makeAddr("USER");
@@ -42,7 +47,9 @@ contract MainEngineTest is Test {
 
     function testBuyArtBlockToken() public {
         uint256 amount = STARTING_BUYING_AMOUNT_ERC20;
-        uint256 tokenAmount = 1000 wei * amount; // 1 ArtBlock token = 1000 wei
+        uint256 tokenAmount = TOTAL_AMOUNT_TO_PAY; // 1 ArtBlock token = 1000 wei
+
+        console.log("Total Supply: ", artBlockToken.totalSupply());
         // Deal the required amount of Ether to the USER account
         vm.deal(USER, tokenAmount);
         // Call the buyArtBlockToken function with the required amount of Ether
