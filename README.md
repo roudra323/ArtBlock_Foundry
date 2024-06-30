@@ -2,79 +2,93 @@
 
 Welcome to the ArtBlock Platform! This README provides an overview of the smart contracts used in the ArtBlock Platform, a decentralized creator-based community focusing on various forms of art. These communities operate as Decentralized Autonomous Organizations (DAOs) with no centralized power dictating their operations. Below, you'll find detailed information about each smart contract, their purpose, and how they interact within the ArtBlock ecosystem.
 
-## Overview
+## Key Features
 
-The ArtBlock Platform comprises several smart contracts to manage various aspects of the platform, including community creation, token management, content publication, voting, NFT minting, and marketplace integration. The primary contracts included in this repository are:
+### Tokenomics
+- **ArtBlock Token (ABT):** Native ERC-20 token used across the platform.
+- **Dynamic Pricing:** Utilizes a bonding curve for dynamic pricing of ABT tokens. The price per token is calculated based on the current supply using the formula
 
-1. `ArtBlockAMM.sol`
-2. `ArtBlockGovernance.sol`
-3. `ArtBlockNFT.sol`
-4. `ARTBlockVoting.sol`
-5. `CustomERC20Token.sol`
-6. `MainEngine.sol`
+```
+exponent = 1; // Exponent for the bonding curve
+pricePerToken = baseRate * (currentSupply ** exponent);
+totalCost = pricePerToken * amount;
+```
+
+
+
+### Community Creation
+- **Fee-Based Community Formation:** Users can initiate their own communities by spending a fee of 1000 ABT. This fee helps maintain the quality of the platform by preventing spam and serves as an investment into the platform’s ecosystem.
+- **Customizable Community Attributes:** Community creators have the flexibility to define the name of their community token, governance rules, and other unique characteristics, fostering diverse and niche communities.
+
+### Community Participation
+- **Joining Communities:** Users can become part of any community by purchasing its specific tokens, which are required for participation in voting and governance.
+- **Community Tokens:** Initially pegged at 1 ABT = 5 community tokens. The token rate dynamically adjusts based on community activity and user points—increasing by 1% for every 1000 community points and offering a 1% discount for every 100 user points, promoting an active and engaged community environment.
+
+### Marketplace and Voting
+- **Product Listings:** Products can be tagged as general or exclusive. General products require a 15% staking of their value in ABT by the creator, whereas exclusive products require a 30% stake.
+- **Voting Mechanism:** Employs a weighted voting system where 60% of a user’s voting weight comes from community tokens and 40% from ABT, ensuring that those most invested in the community have a significant say.
+- **Governance Outcomes:** If a product is approved, the full staked amount is returned to the creator. If not approved, 50% of the stake is returned to the creator and 50% is forfeited to support platform operations.
+
+### Economic Model
+- **Exclusive Products:** Minted as NFTs, sold in the marketplace. This process ensures the uniqueness and ownership verification of premium digital assets.
+- **Resale Market:** Allows for the resale of products with a 3% fee payable in ABT on the final sale price, promoting liquidity and active trading across communities.
+
+
+
+### Smart Contracts
+The platform's functionalities are enabled through several smart contracts:
+- `ArtBlockAMM.sol` for token exchanges.
+- `ArtBlockGovernance.sol` for community governance.
+- `ArtBlockNFT.sol` for handling NFTs.
+- `ARTBlockVoting.sol` for voting mechanisms.
+- `CustomERC20Token.sol` for community-specific tokens.
+- `MainEngine.sol` for overall platform integration.
+
 
 ## Contracts
 
-### 1. `ArtBlockAMM.sol`
+## Smart Contracts Overview
 
-This contract manages the Automated Market Maker (AMM) for the ArtBlock ecosystem. It handles the exchange of ABX tokens and community native tokens. Key functionalities include:
-- Token swaps between ABX and community native tokens.
-- Liquidity management for the tokens.
+The ArtBlock platform employs a series of smart contracts to facilitate various functionalities, from tokenomics and governance to community interaction and marketplace dynamics. Here's a brief overview of each contract and its role within the platform:
 
-### 2. `ArtBlockGovernance.sol`
+### `ArtBlockAMM.sol`
+- **Purpose:** Manages the automated market-making (AMM) functionalities for ArtBlock Tokens.
+- **Functionality:** This contract handles the buying and selling of ABT tokens through a dynamic pricing model determined by a bonding curve. It ensures liquidity and fair pricing as the supply and demand of the token change over time.
 
-The governance contract is central to the DAO operations within the ArtBlock Platform. It facilitates:
-- Creation of new communities by spending a fixed amount of ABX tokens.
-- Generation of unique community native tokens for each new community.
-- Management of community reserves.
+### `ArtBlockGovernance.sol`
+- **Purpose:** Facilitates governance mechanisms within each community on the platform.
+- **Functionality:** Allows community members to propose, vote on, and implement changes within their community. This includes decisions related to community-specific rules, tokenomics, and other governance aspects. It ensures that community decisions are decentralized and driven by member consensus.
 
-### 3. `ArtBlockNFT.sol`
+### `ArtBlockNFT.sol`
+- **Purpose:** Manages the creation and trade of non-fungible tokens (NFTs) for exclusive products on the platform.
+- **Functionality:** This contract allows users to mint NFTs for exclusive items, ensuring their uniqueness and ownership. It also handles the trading of these NFTs within the platform’s marketplace, providing a secure and transparent environment for high-value transactions.
 
-This contract handles the minting and management of NFTs within the platform. It supports:
-- Minting of NFTs for approved art products.
-- Dutch auction mechanism for exclusive items.
-- Transfer and royalty management for NFTs.
+### `ARTBlockVoting.sol`
+- **Purpose:** Oversees the voting processes for product listings and other community decisions.
+- **Functionality:** Implements a weighted voting system that considers both ABT and community tokens to determine the outcome of votes. This contract ensures that the voting process is fair, reflecting the stakes of community members in platform governance.
 
-### 4. `ARTBlockVoting.sol`
+### `CustomERC20Token.sol`
+- **Purpose:** Allows the creation of custom ERC-20 tokens for individual communities within the platform.
+- **Functionality:** Each community can have its own token, which is used for transactions, governance, and rewards within that community. This contract facilitates the issuance and management of these tokens, tailored to the specific needs and rules of each community.
 
-The voting contract enables community members to vote on the approval of art products. It includes:
-- Staking mechanism for product publication.
-- Voting system with weighted votes based on community native tokens held.
-- Transfer of staked tokens to the community reserve if the product is not approved.
+### `MainEngine.sol`
+- **Purpose:** Acts as the central engine that integrates all other contracts and functionalities.
+- **Functionality:** Coordinates interactions between different contracts, ensuring they work together seamlessly. It manages user interactions, token flows, and data across the platform, serving as the backbone of the ArtBlock ecosystem.
 
-### 5. `CustomERC20Token.sol`
+These contracts collectively enable the ArtBlock platform to operate as a robust, decentralized system where communities can flourish under their governance structures, engage in dynamic economic activities, and enjoy secure, transparent transactions.
 
-This contract implements the ERC20 standard for both ABX tokens and community native tokens. Key features include:
-- Standard ERC20 functionalities (transfer, approve, transferFrom).
-- Additional functionalities to support the platform's needs.
 
-### 6. `MainEngine.sol`
-
-The MainEngine contract integrates all the functionalities and coordinates the interactions between different contracts. It includes:
-- User interface for purchasing ABX tokens.
-- Mechanism for creating new communities.
-- Coordination of NFT minting and marketplace activities.
-
-## Platform Scenario
-
-The ArtBlock Platform aims to create a creator-based community for different types of art. Key features of the platform include:
-
-- **Community Creation:** Users can create new communities by spending ABX tokens. Each community has its own native token.
-- **Content Publication:** Creators can publish art products categorized as exclusive or general. Exclusive items undergo a Dutch auction, while general items are listed on the marketplace.
-- **Voting System:** Community members vote on the approval of products. The voting weight is determined by the amount of community native tokens held.
-- **NFT Minting:** Approved art products are minted as NFTs. Exclusive items use a Dutch auction mechanism for pricing.
-- **Marketplace Integration:** A marketplace where users can buy and resell NFTs using community native tokens. Original creators receive royalties on resales.
 
 ## Installation and Deployment
 
 To deploy the smart contracts, follow these steps:
 
 1. **Clone the Repository:**
-   ```bash
-   git clone https://github.com/your-repo/artblock-platform.git
-   cd artblock-platform
-   forge install
-
+```bash
+git clone https://github.com/your-repo/artblock-platform.git
+cd artblock-platform
+forge install
+```
 2. **Build**
 
 ```shell
@@ -98,12 +112,6 @@ $ forge fmt
 ```shell
 $ forge snapshot
 ```
-
-6. **Anvil**
-
-```shell
-$ anvil
-```
 <!-- 
  Needed to fix this
 7. **Deploy**
@@ -116,4 +124,4 @@ $ forge script script/Counter.s.sol:CounterScript --rpc-url <your_rpc_url> --pri
 We welcome contributions to the ArtBlock Platform! Please fork the repository and submit pull requests for any improvements or bug fixes. Ensure your code follows our coding standards and includes appropriate tests.
 
 ## License
-This project is licensed under the MIT License. See the LICENSE file for details.
+<!-- This project is licensed under the MIT License. See the LICENSE file for details. -->

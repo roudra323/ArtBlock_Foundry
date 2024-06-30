@@ -86,8 +86,14 @@ contract MainEngine {
     address private artBlockNFTContract;
     /// @notice Precision value for token calculations.
     uint256 private PRECESSION = 10 ** 18;
-
+    /// @notice Minimum amount to create a community.
     uint256 private constant COMMUNITY_CREATION_FEE = 1000;
+    /// @notice Rate of the platform native token.
+    uint256 public baseRate = 1 ether;
+    /// @notice Exponent value for token calculations.
+    uint256 public exponent = 1;
+    /// @notice Rate of the community token.
+    uint256 public baseCommunityTokenRate = 0.2 ether; // 1 ArtBlock token equals 5 community tokens
 
     //////////////////////
     ////// Structs  //////
@@ -323,13 +329,16 @@ contract MainEngine {
      * @param amount The number of ArtBlock tokens to buy.
      */
     function buyArtBlockToken(address to, uint256 amount) public payable {
-        // ToDo : Need to change the tokenRate through GovernanceContract
-        uint256 tokenAmount = 1000 wei * amount; // 1 ArtBlock token = 1000 wei
+        // Implemented bonding curve
+        uint256 currentSupply = artBlockToken.totalSupply();
+        uint256 pricePerToken = baseRate * (currentSupply ** exponent);
+        uint256 totalCost = pricePerToken * amount;
+
         // check if the user has sent the specified amount of ether to buy the ABT token
-        if (tokenAmount != msg.value) {
+        if (totalCost != msg.value) {
             revert MainEngine__InSufficientAmount();
         }
-        (bool success,) = creatorProtocol.call{ value: tokenAmount }("");
+        (bool success,) = creatorProtocol.call{ value: totalCost }("");
         // check if the transfer of ABT is successful
         if (!success) {
             revert MainEngine__TransferFailed();
@@ -338,18 +347,34 @@ contract MainEngine {
         emit ABTBoughtByUser(to, amount);
     }
 
-    /**
-     * @notice Function to buy community tokens by sending ArtBlock tokens.
-     * @param to The address of the user who is buying the community tokens.
-     * @param amount The number of ArtBlock tokens to buy the community tokens.
-     * @param communityToken The address of the community token.
-     */
-    function buyCommunityToken(address to, uint256 amount, address communityToken) public payable {
-        if (artBlockToken.balanceOf(to) < amount) {
-            // ToDo : Need to change the tokenRate through GovernanceContract
+    // /**
+    //  * @notice Function to buy community tokens by sending ArtBlock tokens.
+    //  * @param to The address of the user who is buying the community tokens.
+    //  * @param amount The number of ArtBlock tokens to buy the community tokens.
+    //  * @param communityToken The address of the community token.
+    //  */
+    // function buyCommunityToken(address to, uint256 amount, address communityToken) public payable {
+    //     if (artBlockToken.balanceOf(to) < amount) {
+    //         // ToDo : Need to change the tokenRate through GovernanceContract
+    //         revert MainEngine__InSufficientAmount();
+    //     }
+    //     artBlockToken.burnFrom(to, amount);
+    //     CustomERC20Token(communityToken).mint(to, amount * PRECESSION);
+    // }
+
+    function buyCommunityToken(address to, uint256 amount, address communityToken) public {
+        uint256 communityPoints = communityActivityPoints[communityToken];
+        uint256 userPoints = userActivityPoints[to][communityToken];
+        uint256 rateAdjustment = calculateRateAdjustment(communityPoints, userPoints);
+
+        uint256 tokenRate = baseCommunityTokenRate * rateAdjustment / 1 ether; // Adjust the rate proportionally
+        uint256 cost = amount * tokenRate / 1 ether; // Adjust for Solidity's lack of floating point
+
+        if (artBlockToken.balanceOf(to) < cost) {
             revert MainEngine__InSufficientAmount();
         }
-        artBlockToken.burnFrom(to, amount);
+
+        artBlockToken.transfer(address(this), cost);
         CustomERC20Token(communityToken).mint(to, amount * PRECESSION);
     }
 
@@ -580,6 +605,22 @@ contract MainEngine {
     function increasePoints(address user, address communityToken) internal {
         userActivityPoints[user][communityToken] += 1;
         communityActivityPoints[communityToken] += 1;
+    }
+
+    /**
+     * @notice Function to calculate the rate adjustment based on the community and user points.
+     * @param communityPoints community points
+     * @param userPoints use engagement points
+     */
+    function calculateRateAdjustment(uint256 communityPoints, uint256 userPoints) internal pure returns (uint256) {
+        uint256 rateIncrease = communityPoints / 1000; // Example: rate increases by 1% for every 1000 points
+        uint256 userDiscount = userPoints / 100; // Example: 1% discount for every 100 points
+        uint256 adjustment = 1 ether + (rateIncrease * 1 ether / 100) - (userDiscount * 1 ether / 100);
+
+        if (adjustment < 1 ether) {
+            return 1 ether; // Ensure rate never goes below 1 ether
+        }
+        return adjustment;
     }
 
     /////////////////////////////
