@@ -1,6 +1,6 @@
-# ArtBlock Platform - Smart Contracts
+# ArtBlockForge Platform - Smart Contracts
 
-Welcome to the ArtBlock Platform! This README provides an overview of the smart contracts used in the ArtBlock Platform, a decentralized creator-based community focusing on various forms of art. These communities operate as Decentralized Autonomous Organizations (DAOs) with no centralized power dictating their operations. Below, you'll find detailed information about each smart contract, their purpose, and how they interact within the ArtBlock ecosystem.
+Welcome to the ArtBlockForge Platform! This README provides an overview of the smart contracts used in the ArtBlockForge Platform, a decentralized creator-based community focusing on various forms of art. These communities operate as Decentralized Autonomous Organizations (DAOs) with no centralized power dictating their operations. Below, you'll find detailed information about each smart contract, their purpose, and how they interact within the ArtBlockForge ecosystem.
 
 ## Key Features
 
@@ -49,7 +49,7 @@ The platform's functionalities are enabled through several smart contracts:
 
 ## Smart Contracts Overview
 
-The ArtBlock platform employs a series of smart contracts to facilitate various functionalities, from tokenomics and governance to community interaction and marketplace dynamics. Here's a brief overview of each contract and its role within the platform:
+The ArtBlockForge platform employs a series of smart contracts to facilitate various functionalities, from tokenomics and governance to community interaction and marketplace dynamics. Here's a brief overview of each contract and its role within the platform:
 
 ### `ArtBlockAMM.sol`
 - **Purpose:** Manages the automated market-making (AMM) functionalities for ArtBlock Tokens.
@@ -73,9 +73,9 @@ The ArtBlock platform employs a series of smart contracts to facilitate various 
 
 ### `MainEngine.sol`
 - **Purpose:** Acts as the central engine that integrates all other contracts and functionalities.
-- **Functionality:** Coordinates interactions between different contracts, ensuring they work together seamlessly. It manages user interactions, token flows, and data across the platform, serving as the backbone of the ArtBlock ecosystem.
+- **Functionality:** Coordinates interactions between different contracts, ensuring they work together seamlessly. It manages user interactions, token flows, and data across the platform, serving as the backbone of the ArtBlockForge ecosystem.
 
-These contracts collectively enable the ArtBlock platform to operate as a robust, decentralized system where communities can flourish under their governance structures, engage in dynamic economic activities, and enjoy secure, transparent transactions.
+These contracts collectively enable the ArtBlockForge platform to operate as a robust, decentralized system where communities can flourish under their governance structures, engage in dynamic economic activities, and enjoy secure, transparent transactions.
 
 
 

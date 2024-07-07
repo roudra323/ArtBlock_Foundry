@@ -15,8 +15,8 @@ contract MainEngineTest is Test {
     uint256 pricePerToken = baseRate * 1;
 
     uint256 private PRECESSION = 10 ** 18;
-    uint256 private immutable STARTING_BUYING_AMOUNT_ERC20 = 2000;
-    uint256 private immutable TOTAL_AMOUNT_TO_PAY = pricePerToken * STARTING_BUYING_AMOUNT_ERC20;
+    uint256 private immutable STARTING_BUYING_AMOUNT_ERC20 = 200_000;
+    uint256 private TOTAL_AMOUNT_TO_PAY = pricePerToken * STARTING_BUYING_AMOUNT_ERC20;
 
     // uint256 totalCost = pricePerToken * STARTING_BUYING_AMOUNT_ERC20;
 
@@ -64,13 +64,22 @@ contract MainEngineTest is Test {
         _;
     }
 
+    function buyArtBlockTokenUSER(address toAccount, uint256 tokenAmount) public {
+        uint256 tokenRate = mainEngine.getArtBlockRate();
+        uint256 amountToPay = tokenRate * tokenAmount;
+        // console.log("Token Rate: (Test)", tokenRate);
+        // console.log("Total Cost: (Test)", amountToPay);
+        vm.deal(toAccount, amountToPay);
+        mainEngine.buyArtBlockToken{ value: amountToPay }(toAccount, tokenAmount);
+    }
+
     function testCreatorBalanceAfterTokenSold() public buyArtBlockToken(USER) {
         assertEq(address(creatorProtocol).balance, TOTAL_AMOUNT_TO_PAY, "Incorrect balance");
     }
 
-    //////////////////////////////////
-    // Test Create Community token ///
-    //////////////////////////////////
+    /////////////////////////////
+    // Test Create Community  ///
+    /////////////////////////////
 
     modifier startsPrank(address PrankAccount) {
         vm.startPrank(PrankAccount);
@@ -85,7 +94,7 @@ contract MainEngineTest is Test {
         string memory tokenSymbol = "PAT";
 
         // Approving Main Engine contract
-        artBlockToken.approve(address(mainEngine), STARTING_BUYING_AMOUNT_ERC20);
+        artBlockToken.approve(address(mainEngine), TOTAL_AMOUNT_TO_PAY);
 
         mainEngine.createCommunity(communityName, communityDescription, tokenName, tokenSymbol, COMMUNITY_CREATOR);
         // address communityTokenAddress = mainEngine.communityTokens(0);
@@ -109,7 +118,7 @@ contract MainEngineTest is Test {
         string memory communityDescription = "People can sell their art here";
         string memory tokenName = "PeopleArtToken";
         string memory tokenSymbol = "PAT";
-        artBlockToken.approve(address(mainEngine), STARTING_BUYING_AMOUNT_ERC20);
+        artBlockToken.approve(address(mainEngine), TOTAL_AMOUNT_TO_PAY);
         mainEngine.createCommunity(communityName, communityDescription, tokenName, tokenSymbol, COMMUNITY_CREATOR);
         vm.stopPrank();
         _;
@@ -150,5 +159,46 @@ contract MainEngineTest is Test {
         mainEngine.joinCommunity(communityTokenAddress);
         vm.expectRevert(MainEngine.MainEngine__AlreadyAMember.selector);
         vm.stopPrank();
+    }
+
+    ///////////////////////////////////////////
+    ///////// Test Buy Community Token ////////
+    ///////////////////////////////////////////
+
+    function testBuyCommunityToken() public buyArtBlockToken(COMMUNITY_CREATOR) createCommunity startsPrank(USER_2) {
+        buyArtBlockTokenUSER(USER_2, STARTING_BUYING_AMOUNT_ERC20);
+        address communityTokenAddress = mainEngine.communityTokens(0);
+        uint256 amount = 2000;
+        mainEngine.buyCommunityToken(USER_2, amount, communityTokenAddress);
+        assertEq(CustomERC20Token(communityTokenAddress).balanceOf(USER_2), amount * PRECESSION);
+    }
+
+    function buyCommunityTokenUSER(address toAccount, uint256 amount, address communityTokenAddress) public {
+        buyArtBlockTokenUSER(toAccount, amount);
+        mainEngine.buyCommunityToken(toAccount, amount, communityTokenAddress);
+    }
+
+    //////////////////////////////////////
+    ///////// Test Submit Product ////////
+    //////////////////////////////////////
+
+    function testSubmitProductToCommunity(uint256 product_price)
+        public
+        buyArtBlockToken(COMMUNITY_CREATOR)
+        createCommunity
+        startsPrank(COMMUNITY_CREATOR)
+    {
+        address communityTokenAddress = mainEngine.communityTokens(0);
+        buyCommunityTokenUSER(COMMUNITY_CREATOR, product_price, communityTokenAddress);
+
+        uint256 productPrice = product_price;
+        string memory metaData = "https://www.artwork.com Artwork A beautiful piece of art";
+        bool isExlcusive = true;
+        console.log(
+            "Community Creator Balance of Community token: ",
+            CustomERC20Token(communityTokenAddress).balanceOf(COMMUNITY_CREATOR)
+        );
+        CustomERC20Token(communityTokenAddress).approve(address(mainEngine), productPrice * PRECESSION);
+        mainEngine.submitNewProduct(metaData, communityTokenAddress, productPrice, isExlcusive);
     }
 }

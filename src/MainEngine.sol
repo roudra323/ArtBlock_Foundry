@@ -23,6 +23,7 @@
 
 pragma solidity ^0.8.23;
 
+import { console } from "forge-std/Test.sol";
 import "@openzeppelin/contracts/utils/math/Math.sol";
 import { CustomERC20Token } from "./CustomERC20Token.sol";
 
@@ -294,10 +295,10 @@ contract MainEngine {
         payable
     {
         // Minimum amount to create a community is 1000 ABT
-        if (artBlockToken.balanceOf(communityCreator) < COMMUNITY_CREATION_FEE) {
+        if (artBlockToken.balanceOf(communityCreator) < COMMUNITY_CREATION_FEE * PRECESSION) {
             revert MainEngine__InSufficientAmount();
         }
-        artBlockToken.transferFrom(communityCreator, address(this), COMMUNITY_CREATION_FEE);
+        artBlockToken.transferFrom(communityCreator, address(this), COMMUNITY_CREATION_FEE * PRECESSION);
         CustomERC20Token communityToken = new CustomERC20Token(tokenName, tokenSymbol, communityCreator);
         communityTokens.push(address(communityToken));
         CommunityInfo memory newCommunity =
@@ -335,10 +336,15 @@ contract MainEngine {
         require(amount > 0, "Amount must be greater than zero");
         // Implemented bonding curve
         uint256 currentSupply = artBlockToken.totalSupply() == 0 ? 1 : artBlockToken.totalSupply();
-        uint256 pricePerToken = baseRate * (currentSupply ** exponent);
+        uint256 pricePerToken = baseRate * (currentSupply ** exponent); // overflows or underflow can happen
+
         uint256 totalCost = pricePerToken * amount;
 
         // check if the user has sent the specified amount of ether to buy the ABT token
+        console.log("Token Rate: ", pricePerToken);
+        console.log("Total Cost: ", totalCost);
+        console.log("msg.value: ", msg.value);
+
         if (totalCost != msg.value) {
             revert MainEngine__InSufficientAmount();
         }
@@ -377,6 +383,9 @@ contract MainEngine {
         uint256 tokenRate = baseCommunityTokenRate * rateAdjustment / 1 ether; // Adjust the rate proportionally
         uint256 cost = amount * tokenRate / 1 ether; // Adjust for Solidity's lack of floating point
 
+        console.log("Cost: ", cost);
+        console.log("User balance: ", artBlockToken.balanceOf(to));
+
         if (artBlockToken.balanceOf(to) < cost) {
             revert MainEngine__InSufficientAmount();
         }
@@ -403,6 +412,9 @@ contract MainEngine {
         require(!productBaseInfo[productId].exists, "Product already exists");
 
         uint256 stakedAmount = getStackAmountFromPrice(price, isExclusive);
+
+        console.log("Products Price: ", price);
+        console.log("Staked Amount: ", stakedAmount);
 
         CustomERC20Token(commToken).transferFrom(msg.sender, address(this), stakedAmount);
 
@@ -707,5 +719,12 @@ contract MainEngine {
 
     function getCommunityActivityPoints(address communityToken) public view returns (uint256) {
         return communityActivityPoints[communityToken];
+    }
+
+    function getArtBlockRate() public view returns (uint256 pricePerToken) {
+        uint256 currentSupply = artBlockToken.totalSupply() == 0 ? 1 : artBlockToken.totalSupply();
+        console.log("comes here (before)");
+        pricePerToken = baseRate * (currentSupply ** exponent);
+        console.log("comes here (after)", pricePerToken);
     }
 }
