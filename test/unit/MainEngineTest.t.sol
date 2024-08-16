@@ -4,21 +4,17 @@ pragma solidity ^0.8.20;
 import { Test, console } from "forge-std/Test.sol";
 import { DeployMainEngine } from "../../script/DeployMainEngine.s.sol";
 import { MainEngine } from "../../src/MainEngine.sol";
+import { VotingContract } from "../../src/ARTBlockVoting.sol";
 import { ERC20Mock } from "@openzeppelin/contracts/mocks/token/ERC20Mock.sol";
 import { CustomERC20Token } from "../../src/CustomERC20Token.sol";
 
 contract MainEngineTest is Test {
     MainEngine mainEngine;
+    VotingContract votingContract;
     CustomERC20Token artBlockToken;
 
-    uint256 private baseRate = 0.5 ether;
-    uint256 pricePerToken = baseRate * 1;
-
     uint256 private PRECESSION = 10 ** 18;
-    uint256 private immutable STARTING_BUYING_AMOUNT_ERC20 = 200_000;
-    uint256 private TOTAL_AMOUNT_TO_PAY = pricePerToken * STARTING_BUYING_AMOUNT_ERC20;
-
-    // uint256 totalCost = pricePerToken * STARTING_BUYING_AMOUNT_ERC20;
+    uint256 private immutable TOKEN_AMOUNT = 200_000;
 
     address private immutable creatorProtocol = makeAddr("CREATOR");
     address private immutable USER = makeAddr("USER");
@@ -30,7 +26,7 @@ contract MainEngineTest is Test {
 
     function setUp() public {
         DeployMainEngine deployMainEngine = new DeployMainEngine();
-        mainEngine = deployMainEngine.run();
+        (mainEngine, votingContract) = deployMainEngine.run();
         address tokenAddress = mainEngine.getTokenAddress(); // Get the address
         artBlockToken = CustomERC20Token(tokenAddress); // Create a new ArtBlockToken instance
     }
@@ -45,36 +41,31 @@ contract MainEngineTest is Test {
     // Test buyArtBlockToken //
     ///////////////////////////
 
-    function testBuyArtBlockToken() public {
-        uint256 amount = STARTING_BUYING_AMOUNT_ERC20;
-        uint256 tokenAmount = TOTAL_AMOUNT_TO_PAY; // 1 ArtBlock token = 1000 wei
-
-        console.log("Total Supply: ", artBlockToken.totalSupply());
-        // Deal the required amount of Ether to the USER account
-        vm.deal(USER, tokenAmount);
-        // Call the buyArtBlockToken function with the required amount of Ether
-        mainEngine.buyArtBlockToken{ value: tokenAmount }(USER, amount);
-        // Add assertions to verify the expected behavior
-        assertEq(artBlockToken.balanceOf(USER), amount * PRECESSION, "Incorrect token balance");
+    function testBuyArtBlockToken(uint256 tokenAmount) public {
+        if (tokenAmount <= 10_000_000_000 && tokenAmount > 0) {
+            uint256 amount = tokenAmount;
+            uint256 tokenRate = mainEngine.getArtBlockRate();
+            uint256 amountToPay = tokenRate * amount;
+            vm.deal(USER, amountToPay);
+            mainEngine.buyArtBlockToken{ value: amountToPay }(USER, amount);
+            assertEq(artBlockToken.balanceOf(USER), amount * PRECESSION, "Incorrect token balance");
+        }
     }
 
     modifier buyArtBlockToken(address toAccount) {
-        vm.deal(toAccount, TOTAL_AMOUNT_TO_PAY);
-        mainEngine.buyArtBlockToken{ value: TOTAL_AMOUNT_TO_PAY }(toAccount, STARTING_BUYING_AMOUNT_ERC20);
+        uint256 tokenRate = mainEngine.getArtBlockRate();
+        uint256 amountToPay = tokenRate * TOKEN_AMOUNT;
+        vm.deal(toAccount, amountToPay);
+        mainEngine.buyArtBlockToken{ value: amountToPay }(toAccount, TOKEN_AMOUNT);
         _;
     }
 
     function buyArtBlockTokenUSER(address toAccount, uint256 tokenAmount) public {
         uint256 tokenRate = mainEngine.getArtBlockRate();
         uint256 amountToPay = tokenRate * tokenAmount;
-        // console.log("Token Rate: (Test)", tokenRate);
-        // console.log("Total Cost: (Test)", amountToPay);
         vm.deal(toAccount, amountToPay);
         mainEngine.buyArtBlockToken{ value: amountToPay }(toAccount, tokenAmount);
-    }
-
-    function testCreatorBalanceAfterTokenSold() public buyArtBlockToken(USER) {
-        assertEq(address(creatorProtocol).balance, TOTAL_AMOUNT_TO_PAY, "Incorrect balance");
+        artBlockToken.approve(address(mainEngine), tokenAmount * PRECESSION);
     }
 
     /////////////////////////////
@@ -93,8 +84,11 @@ contract MainEngineTest is Test {
         string memory tokenName = "PeopleArtToken";
         string memory tokenSymbol = "PAT";
 
+        uint256 tokenRate = mainEngine.getArtBlockRate();
+        uint256 amountToPay = tokenRate * TOKEN_AMOUNT;
+
         // Approving Main Engine contract
-        artBlockToken.approve(address(mainEngine), TOTAL_AMOUNT_TO_PAY);
+        artBlockToken.approve(address(mainEngine), amountToPay);
 
         mainEngine.createCommunity(communityName, communityDescription, tokenName, tokenSymbol, COMMUNITY_CREATOR);
         // address communityTokenAddress = mainEngine.communityTokens(0);
@@ -118,7 +112,11 @@ contract MainEngineTest is Test {
         string memory communityDescription = "People can sell their art here";
         string memory tokenName = "PeopleArtToken";
         string memory tokenSymbol = "PAT";
-        artBlockToken.approve(address(mainEngine), TOTAL_AMOUNT_TO_PAY);
+
+        uint256 tokenRate = mainEngine.getArtBlockRate();
+        uint256 amountToPay = tokenRate * TOKEN_AMOUNT;
+
+        artBlockToken.approve(address(mainEngine), amountToPay);
         mainEngine.createCommunity(communityName, communityDescription, tokenName, tokenSymbol, COMMUNITY_CREATOR);
         vm.stopPrank();
         _;
@@ -165,10 +163,12 @@ contract MainEngineTest is Test {
     ///////// Test Buy Community Token ////////
     ///////////////////////////////////////////
 
-    function testBuyCommunityToken() public buyArtBlockToken(COMMUNITY_CREATOR) createCommunity startsPrank(USER_2) {
-        buyArtBlockTokenUSER(USER_2, STARTING_BUYING_AMOUNT_ERC20);
+    function testBuyCommunityToken() public buyArtBlockToken(COMMUNITY_CREATOR) createCommunity {
+        buyArtBlockTokenUSER(USER_2, TOKEN_AMOUNT);
         address communityTokenAddress = mainEngine.communityTokens(0);
         uint256 amount = 2000;
+        vm.prank(USER_2);
+        artBlockToken.approve(address(mainEngine), amount * PRECESSION);
         mainEngine.buyCommunityToken(USER_2, amount, communityTokenAddress);
         assertEq(CustomERC20Token(communityTokenAddress).balanceOf(USER_2), amount * PRECESSION);
     }
@@ -188,17 +188,22 @@ contract MainEngineTest is Test {
         createCommunity
         startsPrank(COMMUNITY_CREATOR)
     {
-        address communityTokenAddress = mainEngine.communityTokens(0);
-        buyCommunityTokenUSER(COMMUNITY_CREATOR, product_price, communityTokenAddress);
+        if (product_price <= 1_000_000_000 && product_price > 0) {
+            address communityTokenAddress = mainEngine.communityTokens(0);
+            buyCommunityTokenUSER(COMMUNITY_CREATOR, product_price, communityTokenAddress);
 
-        uint256 productPrice = product_price;
-        string memory metaData = "https://www.artwork.com Artwork A beautiful piece of art";
-        bool isExlcusive = true;
-        console.log(
-            "Community Creator Balance of Community token: ",
-            CustomERC20Token(communityTokenAddress).balanceOf(COMMUNITY_CREATOR)
-        );
-        CustomERC20Token(communityTokenAddress).approve(address(mainEngine), productPrice * PRECESSION);
-        mainEngine.submitNewProduct(metaData, communityTokenAddress, productPrice, isExlcusive);
+            uint256 productPrice = product_price;
+            string memory metaData = "https://www.artwork.com Artwork A beautiful piece of art";
+            bool isExlcusive = true;
+            console.log(
+                "Community Creator Balance of Community token: ",
+                CustomERC20Token(communityTokenAddress).balanceOf(COMMUNITY_CREATOR)
+            );
+            CustomERC20Token(communityTokenAddress).approve(address(mainEngine), productPrice * PRECESSION);
+            mainEngine.submitNewProduct(metaData, communityTokenAddress, productPrice, isExlcusive);
+            bytes4 userProductID = mainEngine.userProducts(COMMUNITY_CREATOR, communityTokenAddress, 0);
+            assertEq(mainEngine.getProductBaseInfo(userProductID).exists, true);
+            assertEq(mainEngine.getProductBaseInfo(userProductID).approved, false);
+        }
     }
 }

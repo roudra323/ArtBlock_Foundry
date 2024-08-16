@@ -23,19 +23,22 @@
 
 pragma solidity ^0.8.20;
 
+import { console } from "forge-std/Test.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 struct ProductBase {
     uint256 stakeAmount;
+    bool stackReturned;
     uint256 upvotes;
     uint256 downvotes;
     uint256 productSubmittedTime;
     bool approved;
     bool exists;
+    bool isExclusive;
 }
 
 interface IMainEngine {
-    function getProductBaseInfo(bytes32 productId) external view returns (ProductBase memory);
+    function getProductBaseInfo(bytes4 productId) external view returns (ProductBase memory);
     function getTokenAddress() external view returns (address);
 }
 
@@ -95,20 +98,18 @@ contract VotingContract {
      * @param isUPVote Boolean indicating if the vote is an upvote
      */
     function voteForProduct(bytes4 productId, address communityToken, bool isUPVote) external {
-        ProductBase memory productBase = productsVotingInfo[productId];
-
         if (!IMainEngine(mainEngineAddress).getProductBaseInfo(productId).exists) {
             revert VotingContract__ProductDoesntExist(productId);
         }
 
-        if (productBase.approved) {
+        if (productsVotingInfo[productId].approved) {
             revert VotingContract__ProductAlreadyApproved(productId);
         }
 
         if (isUPVote) {
-            productBase.upvotes += calculateVoteWeight(msg.sender, communityToken);
+            productsVotingInfo[productId].upvotes += calculateVoteWeight(msg.sender, communityToken);
         } else {
-            productBase.downvotes += calculateVoteWeight(msg.sender, communityToken);
+            productsVotingInfo[productId].downvotes += calculateVoteWeight(msg.sender, communityToken);
         }
         emit VoteCasted(productId, communityToken, isUPVote);
     }
@@ -150,12 +151,12 @@ contract VotingContract {
     function calculateVoteWeight(address user, address community) internal view returns (uint256 totalVotes) {
         uint256 userCommunitytoken = IERC20(community).balanceOf(user);
         uint256 userArtBlockToken = IERC20(artBlockToken).balanceOf(user);
-        uint256 communityTokenWeight = (userCommunitytoken * 6 * VOTING_PRECISION) / 10; // 60% weightage of the
+        uint256 communityTokenWeight = (userCommunitytoken * 6) / 10; // 60% weightage of the
             // community token
 
-        uint256 artblockTokenWeight = (userArtBlockToken * 4 * VOTING_PRECISION) / 10; // 40% weightage of the artblock
+        uint256 artblockTokenWeight = (userArtBlockToken * 4) / 10; // 40% weightage of the artblock
             // token
-        totalVotes = (communityTokenWeight + artblockTokenWeight);
+        totalVotes = (communityTokenWeight + artblockTokenWeight) / 1 ether;
     }
 
     //////////////////////////////
@@ -172,6 +173,10 @@ contract VotingContract {
 
     function isApproved(bytes4 productId) external view returns (bool) {
         return productsVotingInfo[productId].approved;
+    }
+
+    function getVotingWeight(address user, address community) external view returns (uint256) {
+        return calculateVoteWeight(user, community);
     }
 
     /**

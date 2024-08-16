@@ -68,7 +68,7 @@ contract MainEngine {
     /// @notice Error indicating that the voting is ongoing.
     error MainEngine__VotingOngoing();
     /// @notice Error indicating that the user is unauthorized to perform an action.
-    error MainEngine__UnAuthorised();
+    error MainEngine__UnAuthorised(address user);
     /// @notice Error indicating that the user is unauthorized to perform an action.
     error MainEngine__ProductIsInMarketPlace();
     /// @notice Error indicating that the user has not met the threshold.
@@ -234,7 +234,7 @@ contract MainEngine {
 
     modifier isOwner(bytes4 productId) {
         if (productInfo[productId].currentOwner != msg.sender) {
-            revert MainEngine__UnAuthorised();
+            revert MainEngine__UnAuthorised(msg.sender);
         }
         _;
     }
@@ -248,7 +248,7 @@ contract MainEngine {
 
     modifier canPostProductToSell(bytes4 productId) {
         if (productInfo[productId].currentOwner != msg.sender) {
-            revert MainEngine__UnAuthorised();
+            revert MainEngine__UnAuthorised(msg.sender);
         }
         if (productInfo[productId].isListedOnMarketPlace) {
             revert MainEngine__ProductIsInMarketPlace();
@@ -333,18 +333,8 @@ contract MainEngine {
      * @param amount The number of ArtBlock tokens to buy.
      */
     function buyArtBlockToken(address to, uint256 amount) public payable {
-        require(amount > 0, "Amount must be greater than zero");
-        // Implemented bonding curve
-        uint256 currentSupply = artBlockToken.totalSupply() == 0 ? 1 : artBlockToken.totalSupply();
-        uint256 pricePerToken = baseRate * (currentSupply ** exponent); // overflows or underflow can happen
-
+        uint256 pricePerToken = getArtBlockRate();
         uint256 totalCost = pricePerToken * amount;
-
-        // check if the user has sent the specified amount of ether to buy the ABT token
-        console.log("Token Rate: ", pricePerToken);
-        console.log("Total Cost: ", totalCost);
-        console.log("msg.value: ", msg.value);
-
         if (totalCost != msg.value) {
             revert MainEngine__InSufficientAmount();
         }
@@ -360,37 +350,19 @@ contract MainEngine {
         emit ABTBoughtByUser(to, amount);
     }
 
-    // /**
-    //  * @notice Function to buy community tokens by sending ArtBlock tokens.
-    //  * @param to The address of the user who is buying the community tokens.
-    //  * @param amount The number of ArtBlock tokens to buy the community tokens.
-    //  * @param communityToken The address of the community token.
-    //  */
-    // function buyCommunityToken(address to, uint256 amount, address communityToken) public payable {
-    //     if (artBlockToken.balanceOf(to) < amount) {
-    //         // ToDo : Need to change the tokenRate through GovernanceContract
-    //         revert MainEngine__InSufficientAmount();
-    //     }
-    //     artBlockToken.burnFrom(to, amount);
-    //     CustomERC20Token(communityToken).mint(to, amount * PRECESSION);
-    // }
-
+    /**
+     * @notice Function to buy community tokens by sending ArtBlock tokens.
+     * @param to The address of the user who is buying the community tokens.
+     * @param amount The number of ArtBlock tokens to buy the community tokens.
+     * @param communityToken The address of the community token.
+     */
     function buyCommunityToken(address to, uint256 amount, address communityToken) public {
-        uint256 communityPoints = communityActivityPoints[communityToken];
-        uint256 userPoints = userActivityPoints[to][communityToken];
-        uint256 rateAdjustment = calculateRateAdjustment(communityPoints, userPoints);
-
-        uint256 tokenRate = baseCommunityTokenRate * rateAdjustment / 1 ether; // Adjust the rate proportionally
-        uint256 cost = amount * tokenRate / 1 ether; // Adjust for Solidity's lack of floating point
-
-        console.log("Cost: ", cost);
-        console.log("User balance: ", artBlockToken.balanceOf(to));
-
+        uint256 cost = getCommunityTokenCost(to, amount, communityToken);
         if (artBlockToken.balanceOf(to) < cost) {
             revert MainEngine__InSufficientAmount();
         }
 
-        artBlockToken.transfer(address(this), cost);
+        artBlockToken.transferFrom(to, address(this), cost * PRECESSION);
         CustomERC20Token(communityToken).mint(to, amount * PRECESSION);
     }
 
@@ -402,8 +374,11 @@ contract MainEngine {
      * @param isExclusive Whether the product is exclusive.
      */
     function submitNewProduct(string memory metadata, address commToken, uint256 price, bool isExclusive) external {
+        // console.log("Community Creator: ", communityInfo[commToken].communityCreator);
+        // console.log("Sender: ", msg.sender);
+
         if (communityInfo[commToken].communityCreator != msg.sender) {
-            revert MainEngine__UnAuthorised();
+            revert MainEngine__UnAuthorised(msg.sender);
         }
 
         // Generate a unique product ID using keccak256
@@ -413,9 +388,12 @@ contract MainEngine {
 
         uint256 stakedAmount = getStackAmountFromPrice(price, isExclusive);
 
-        console.log("Products Price: ", price);
-        console.log("Staked Amount: ", stakedAmount);
-
+        // @error ERC20InsufficientAllowance
+        // console.log("MainEngine::StacekdAMount: ", stakedAmount);
+        // console.log("MainEngine::Custom token balance: ", CustomERC20Token(commToken).balanceOf(msg.sender));
+        // console.log(
+        //     "MainEngine::Custom token Allowance", CustomERC20Token(commToken).allowance(msg.sender, address(this))
+        // );
         CustomERC20Token(commToken).transferFrom(msg.sender, address(this), stakedAmount);
 
         productBaseInfo[productId] = ProductBase({
@@ -706,6 +684,7 @@ contract MainEngine {
      * @return The basic product information.
      */
     function getProductBaseInfo(bytes4 productId) external view returns (ProductBase memory) {
+        require(productBaseInfo[productId].exists, "Product does not exist");
         return productBaseInfo[productId];
     }
 
@@ -721,10 +700,23 @@ contract MainEngine {
         return communityActivityPoints[communityToken];
     }
 
+    function getCommunityCreationFee() public pure returns (uint256) {
+        return COMMUNITY_CREATION_FEE;
+    }
+
     function getArtBlockRate() public view returns (uint256 pricePerToken) {
-        uint256 currentSupply = artBlockToken.totalSupply() == 0 ? 1 : artBlockToken.totalSupply();
-        console.log("comes here (before)");
-        pricePerToken = baseRate * (currentSupply ** exponent);
-        console.log("comes here (after)", pricePerToken);
+        uint256 currentSupply = artBlockToken.totalSupply() == 0 ? 1 : artBlockToken.totalSupply() / PRECESSION;
+        pricePerToken = baseRate + (currentSupply ** exponent);
+    }
+
+    function getCommunityTokenCost(address to, uint256 amount, address communityToken) public view returns (uint256) {
+        uint256 communityPoints = communityActivityPoints[communityToken];
+        uint256 userPoints = userActivityPoints[to][communityToken];
+        uint256 rateAdjustment = calculateRateAdjustment(communityPoints, userPoints);
+
+        uint256 tokenRate = baseCommunityTokenRate * rateAdjustment / 1 ether; // Adjust the rate proportionally
+        uint256 cost = amount * tokenRate / 1 ether; // Adjust for Solidity's lack of floating point
+
+        return cost;
     }
 }
