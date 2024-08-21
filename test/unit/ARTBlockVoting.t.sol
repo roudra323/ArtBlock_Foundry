@@ -8,6 +8,15 @@ import { VotingContract } from "../../src/ARTBlockVoting.sol";
 import { CustomERC20Token } from "../../src/CustomERC20Token.sol";
 
 contract VotingTest is Test {
+    /*//////////////////////////////////////////////////////////////
+                                 ERRORS
+    //////////////////////////////////////////////////////////////*/
+    error VotingContract__VotingOnGoing(bytes4 productId);
+
+    /*//////////////////////////////////////////////////////////////
+                                 EVENTS
+    //////////////////////////////////////////////////////////////*/
+
     event VoteCasted(bytes4 indexed productId, address indexed communityToken, bool indexed isUPVote);
 
     MainEngine mainEngine;
@@ -16,7 +25,7 @@ contract VotingTest is Test {
 
     uint256 private PRECESSION = 10 ** 18;
     uint256 private immutable TOKEN_AMOUNT = 200_000;
-
+    address private DEPLOYER = makeAddr("CREATOR");
     address private immutable COMMUNITY_CREATOR = makeAddr("COMMUNITY_CREATOR");
     address private immutable USER = makeAddr("USER");
     address private immutable USER_2 = makeAddr("USER_2");
@@ -35,13 +44,7 @@ contract VotingTest is Test {
         uint256 tokenRate = mainEngine.getArtBlockRate();
         uint256 amountToPay = tokenRate * tokenAmount;
         vm.deal(toAccount, amountToPay);
-        console.log(
-            "ArtBlock Token Balance(Before): ", CustomERC20Token(artBlockToken).balanceOf(toAccount) / PRECESSION
-        );
         mainEngine.buyArtBlockToken{ value: amountToPay }(toAccount, tokenAmount);
-        console.log(
-            "ArtBlock Token Balance(after): ", CustomERC20Token(artBlockToken).balanceOf(toAccount) / PRECESSION
-        );
     }
 
     function createCommunity(address creator) public {
@@ -69,10 +72,6 @@ contract VotingTest is Test {
         buyArtBlockToken(toAccount, communityTokenCost);
         // mainEngine.buyArtBlockToken{ value: communityTokenCost }(toAccount, communityTokenCost);
         mainEngine.buyCommunityToken(toAccount, amount, communityTokenAddress);
-        console.log(
-            "Community Token Balance: ", CustomERC20Token(communityTokenAddress).balanceOf(toAccount) / PRECESSION
-        );
-        console.log("ArtBlock Token Balance: ", CustomERC20Token(artBlockToken).balanceOf(toAccount) / PRECESSION);
     }
 
     function submitProductToCommunity(address creator, address communityTokenAddress) public {
@@ -146,12 +145,14 @@ contract VotingTest is Test {
         _;
     }
 
-    function testMultipleUpVotingForAProduct(uint32 token) public tillSubmitProduct {
+    function testMultipleUpVotingForAProduct(uint32 token, bool _upVoteORdownVote) public tillSubmitProduct {
         // community token address
         address communityTokenAddress = mainEngine.communityTokens(0);
         bytes4 userProductID = mainEngine.userProducts(COMMUNITY_CREATOR, communityTokenAddress, 0);
         uint256 tokenToMint = token;
-        uint256 totalVotingWeight = 0;
+        bool upVoteORdownVote = _upVoteORdownVote;
+        uint256 totalUpvote;
+        uint256 totalDownvote;
         // join community
         for (uint256 i = 1; i <= 5; i++) {
             address user = address(uint160(i));
@@ -163,50 +164,266 @@ contract VotingTest is Test {
             buyArtBlockToken(user, tokenToMint * i);
             buyCommunityToken(user, tokenToMint * (7 - i), communityTokenAddress);
 
-            uint256 userCommunitytoken = CustomERC20Token(communityTokenAddress).balanceOf(user);
-            uint256 userArtBlockToken = CustomERC20Token(artBlockToken).balanceOf(user);
-
-            console.log("CommunityToken: ", userCommunitytoken / 1e8, "ArtBlockToken: ", userArtBlockToken / 1e8);
-
             vm.startPrank(user);
-            votingContract.voteForProduct(userProductID, communityTokenAddress, true);
-            totalVotingWeight += votingContract.getVotingWeight(user, communityTokenAddress);
+            votingContract.voteForProduct(userProductID, communityTokenAddress, upVoteORdownVote);
+            uint256 totalVotingWeight = votingContract.getVotingWeight(user, communityTokenAddress);
+            if (upVoteORdownVote) {
+                totalUpvote += totalVotingWeight;
+            } else {
+                totalDownvote += totalVotingWeight;
+            }
             vm.stopPrank();
             // Advance the block to ensure pranks don't overlap
             vm.roll(block.number + 1);
         }
         uint256 upvote = votingContract.getProductVotingInfo(userProductID).upvotes;
         uint256 downvotes = votingContract.getProductVotingInfo(userProductID).downvotes;
-        assertEq(upvote, totalVotingWeight);
-        assertEq(downvotes, 0);
+
+        // Checks
+        assertEq(upvote, totalUpvote);
+        assertEq(downvotes, totalDownvote);
     }
 
-    function testSingleUpVoting(uint32 token) public tillSubmitProduct {
+    function test_Reverts_When_Voting_On_Going() public tillSubmitProduct {
         // community token address
         address communityTokenAddress = mainEngine.communityTokens(0);
         bytes4 userProductID = mainEngine.userProducts(COMMUNITY_CREATOR, communityTokenAddress, 0);
-        vm.assume(token < 50);
-        uint256 tokenToMint = token;
+        uint256 tokenToMint = 1000;
+        bool upVoteORdownVote = true;
+
         // join community
-        uint256 i = 1;
-        address user = address(uint160(i));
+        for (uint256 i = 1; i <= 5; i++) {
+            address user = address(uint160(i));
 
-        vm.prank(user);
-        mainEngine.joinCommunity(communityTokenAddress);
+            vm.startPrank(user);
+            mainEngine.joinCommunity(communityTokenAddress);
+            vm.stopPrank();
 
-        buyArtBlockToken(user, tokenToMint * i);
-        buyCommunityToken(user, tokenToMint * (7 - i), communityTokenAddress);
+            buyArtBlockToken(user, tokenToMint * i);
+            buyCommunityToken(user, tokenToMint * (7 - i), communityTokenAddress);
 
-        uint256 userCommunitytoken = CustomERC20Token(communityTokenAddress).balanceOf(user);
-        uint256 userArtBlockToken = CustomERC20Token(artBlockToken).balanceOf(user);
+            vm.startPrank(user);
+            votingContract.voteForProduct(userProductID, communityTokenAddress, upVoteORdownVote);
+            vm.stopPrank();
+            // Advance the block to ensure pranks don't overlap
+            vm.roll(block.number + 1);
+        }
+        vm.expectRevert(abi.encodeWithSelector(VotingContract__VotingOnGoing.selector, userProductID));
 
-        vm.startPrank(user);
-        votingContract.voteForProduct(userProductID, communityTokenAddress, true);
-        vm.stopPrank();
-        // Advance the block to ensure pranks don't overlap
-        vm.roll(block.number + 1);
+        vm.prank(address(mainEngine));
+        votingContract.calculateVotingResult(userProductID);
+    }
 
-        uint256 upvote = votingContract.getProductVotingInfo(userProductID).upvotes;
-        uint256 downvotes = votingContract.getProductVotingInfo(userProductID).downvotes;
+    function test_Approve_Product_if_Upvotes_are_greater() public tillSubmitProduct {
+        // community token address
+        address communityTokenAddress = mainEngine.communityTokens(0);
+        bytes4 userProductID = mainEngine.userProducts(COMMUNITY_CREATOR, communityTokenAddress, 0);
+        uint256 productSubmittedTime = mainEngine.getProductBaseInfo(userProductID).productSubmittedTime;
+        uint256 tokenToMint = 1000;
+        bool upVoteORdownVote = true;
+
+        // join community
+        for (uint256 i = 1; i <= 5; i++) {
+            address user = address(uint160(i));
+
+            vm.startPrank(user);
+            mainEngine.joinCommunity(communityTokenAddress);
+            vm.stopPrank();
+
+            buyArtBlockToken(user, tokenToMint * i);
+            buyCommunityToken(user, tokenToMint * (7 - i), communityTokenAddress);
+
+            vm.startPrank(user);
+            votingContract.voteForProduct(userProductID, communityTokenAddress, upVoteORdownVote);
+            vm.stopPrank();
+            // Advance the block to ensure pranks don't overlap
+            vm.roll(block.number + 1);
+        }
+        vm.warp(productSubmittedTime + 8 days);
+        // vm.expectRevert(abi.encodeWithSelector(VotingContract__VotingOnGoing.selector, userProductID));
+
+        vm.prank(address(mainEngine));
+        votingContract.calculateVotingResult(userProductID);
+        assertEq(votingContract.getProductVotingInfo(userProductID).approved, true);
+    }
+
+    function test_check_product_approval_from_mainContract() public tillSubmitProduct {
+        address communityTokenAddress = mainEngine.communityTokens(0);
+        bytes4 userProductID = mainEngine.userProducts(COMMUNITY_CREATOR, communityTokenAddress, 0);
+        bool isApproved = mainEngine.checkProductApprovalStatus(userProductID);
+        assertFalse(isApproved);
+    }
+
+    function test_returns_true_from_mainContract() public tillSubmitProduct {
+        address communityTokenAddress = mainEngine.communityTokens(0);
+        bytes4 userProductID = mainEngine.userProducts(COMMUNITY_CREATOR, communityTokenAddress, 0);
+        uint256 productSubmittedTime = mainEngine.getProductBaseInfo(userProductID).productSubmittedTime;
+        uint256 tokenToMint = 1000;
+        bool upVoteORdownVote = true;
+
+        // join community
+        for (uint256 i = 1; i <= 5; i++) {
+            address user = address(uint160(i));
+
+            vm.startPrank(user);
+            mainEngine.joinCommunity(communityTokenAddress);
+            vm.stopPrank();
+
+            buyArtBlockToken(user, tokenToMint * i);
+            buyCommunityToken(user, tokenToMint * (7 - i), communityTokenAddress);
+
+            vm.startPrank(user);
+            votingContract.voteForProduct(userProductID, communityTokenAddress, upVoteORdownVote);
+            vm.stopPrank();
+            // Advance the block to ensure pranks don't overlap
+            vm.roll(block.number + 1);
+        }
+        vm.warp(productSubmittedTime + 8 days);
+        // vm.expectRevert(abi.encodeWithSelector(VotingContract__VotingOnGoing.selector, userProductID));
+
+        vm.prank(address(mainEngine));
+        votingContract.calculateVotingResult(userProductID);
+        assertEq(votingContract.getProductVotingInfo(userProductID).approved, true);
+
+        bool isApproved = mainEngine.checkProductApprovalStatus(userProductID);
+        assertTrue(isApproved);
+    }
+
+    function test_returns_false_from_mainContract() public tillSubmitProduct {
+        address communityTokenAddress = mainEngine.communityTokens(0);
+        bytes4 userProductID = mainEngine.userProducts(COMMUNITY_CREATOR, communityTokenAddress, 0);
+        uint256 productSubmittedTime = mainEngine.getProductBaseInfo(userProductID).productSubmittedTime;
+        uint256 tokenToMint = 1000;
+        bool upVoteORdownVote = false;
+
+        // join community
+        for (uint256 i = 1; i <= 5; i++) {
+            address user = address(uint160(i));
+
+            vm.startPrank(user);
+            mainEngine.joinCommunity(communityTokenAddress);
+            vm.stopPrank();
+
+            buyArtBlockToken(user, tokenToMint * i);
+            buyCommunityToken(user, tokenToMint * (7 - i), communityTokenAddress);
+
+            vm.startPrank(user);
+            votingContract.voteForProduct(userProductID, communityTokenAddress, upVoteORdownVote);
+            vm.stopPrank();
+            // Advance the block to ensure pranks don't overlap
+            vm.roll(block.number + 1);
+        }
+        vm.warp(productSubmittedTime + 8 days);
+
+        vm.prank(address(mainEngine));
+        votingContract.calculateVotingResult(userProductID);
+        assertEq(votingContract.getProductVotingInfo(userProductID).approved, false);
+
+        bool isApproved = mainEngine.checkProductApprovalStatus(userProductID);
+        assertFalse(isApproved);
+    }
+
+    function submitsProductAndcalculatesVotingResult(bool _upVoteORdownVote) public tillSubmitProduct {
+        address communityTokenAddress = mainEngine.communityTokens(0);
+        bytes4 userProductID = mainEngine.userProducts(COMMUNITY_CREATOR, communityTokenAddress, 0);
+        uint256 productSubmittedTime = mainEngine.getProductBaseInfo(userProductID).productSubmittedTime;
+        uint256 tokenToMint = 1000;
+        bool upVoteORdownVote = _upVoteORdownVote;
+
+        // join community
+        for (uint256 i = 1; i <= 5; i++) {
+            address user = address(uint160(i));
+
+            vm.startPrank(user);
+            mainEngine.joinCommunity(communityTokenAddress);
+            vm.stopPrank();
+
+            buyArtBlockToken(user, tokenToMint * i);
+            buyCommunityToken(user, tokenToMint * (7 - i), communityTokenAddress);
+
+            vm.startPrank(user);
+            votingContract.voteForProduct(userProductID, communityTokenAddress, upVoteORdownVote);
+            vm.stopPrank();
+            // Advance the block to ensure pranks don't overlap
+            vm.roll(block.number + 1);
+        }
+        vm.warp(productSubmittedTime + 8 days);
+        // vm.expectRevert(abi.encodeWithSelector(VotingContract__VotingOnGoing.selector, userProductID));
+
+        vm.prank(address(mainEngine));
+        votingContract.calculateVotingResult(userProductID);
+    }
+
+    function test_product_is_approved_and_returns_full_stacked_amount() public tillSubmitProduct {
+        address communityTokenAddress = mainEngine.communityTokens(0);
+        bytes4 userProductID = mainEngine.userProducts(COMMUNITY_CREATOR, communityTokenAddress, 0);
+        uint256 productSubmittedTime = mainEngine.getProductBaseInfo(userProductID).productSubmittedTime;
+        uint256 tokenToMint = 1000;
+        bool upVoteORdownVote = true;
+
+        // join community
+        for (uint256 i = 1; i <= 5; i++) {
+            address user = address(uint160(i));
+
+            vm.startPrank(user);
+            mainEngine.joinCommunity(communityTokenAddress);
+            vm.stopPrank();
+
+            buyArtBlockToken(user, tokenToMint * i);
+            buyCommunityToken(user, tokenToMint * (7 - i), communityTokenAddress);
+
+            vm.startPrank(user);
+            votingContract.voteForProduct(userProductID, communityTokenAddress, upVoteORdownVote);
+            vm.stopPrank();
+            // Advance the block to ensure pranks don't overlap
+            vm.roll(block.number + 1);
+        }
+        vm.warp(productSubmittedTime + 8 days);
+        // vm.expectRevert(abi.encodeWithSelector(VotingContract__VotingOnGoing.selector, userProductID));
+
+        uint256 customTokenBalance = CustomERC20Token(communityTokenAddress).balanceOf(address(mainEngine));
+        vm.prank(address(mainEngine));
+        votingContract.calculateVotingResult(userProductID);
+        // return the full stacked amount
+        mainEngine.returnStackedAmount(userProductID);
+        uint256 currentCustomTokenBalance = CustomERC20Token(communityTokenAddress).balanceOf(address(mainEngine));
+        assertTrue(mainEngine.getProductBaseInfo(userProductID).stackReturned);
+        assertEq(
+            currentCustomTokenBalance, customTokenBalance - (mainEngine.getProductBaseInfo(userProductID).stakeAmount)
+        );
+    }
+
+    function test_product_is_not_Approved_and_returns_half_stacked_amount() public tillSubmitProduct {
+        address communityTokenAddress = mainEngine.communityTokens(0);
+        bytes4 userProductID = mainEngine.userProducts(COMMUNITY_CREATOR, communityTokenAddress, 0);
+        uint256 productSubmittedTime = mainEngine.getProductBaseInfo(userProductID).productSubmittedTime;
+        uint256 tokenToMint = 1000;
+        bool upVoteORdownVote = false;
+
+        // join community
+        for (uint256 i = 1; i <= 5; i++) {
+            address user = address(uint160(i));
+
+            vm.startPrank(user);
+            mainEngine.joinCommunity(communityTokenAddress);
+            vm.stopPrank();
+
+            buyArtBlockToken(user, tokenToMint * i);
+            buyCommunityToken(user, tokenToMint * (7 - i), communityTokenAddress);
+
+            vm.startPrank(user);
+            votingContract.voteForProduct(userProductID, communityTokenAddress, upVoteORdownVote);
+            vm.stopPrank();
+            // Advance the block to ensure pranks don't overlap
+            vm.roll(block.number + 1);
+        }
+        vm.warp(productSubmittedTime + 8 days);
+        vm.prank(address(mainEngine));
+        votingContract.calculateVotingResult(userProductID);
+        // return the full stacked amount
+        mainEngine.returnStackedAmount(userProductID);
+        uint256 currentCustomTokenBalance = CustomERC20Token(communityTokenAddress).balanceOf(address(mainEngine));
+        assertTrue(mainEngine.getProductBaseInfo(userProductID).stackReturned);
+        assertEq(currentCustomTokenBalance, mainEngine.getProductBaseInfo(userProductID).stakeAmount / 2);
     }
 }

@@ -10,6 +10,7 @@ contract DeployMainEngine is Script {
         vm.startBroadcast(makeAddr("CREATOR"));
         deployedContract = new MainEngine();
         deployedVotingContract = new VotingContract(address(deployedContract));
+        deployedContract.setVotingContract(address(deployedVotingContract));
         vm.stopBroadcast();
     }
 }
