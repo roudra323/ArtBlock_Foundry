@@ -47,61 +47,41 @@ interface IArtBlockNFT {
 contract MainEngine {
     using Math for uint256;
 
-    ///////////////
-    /// Errors ////
-    ///////////////
+    /*//////////////////////////////////////////////////////////////
+                                ERRORS
+    //////////////////////////////////////////////////////////////*/
 
-    /// @notice Error indicating that a transfer has failed.
     error MainEngine__TransferFailed();
-    /// @notice Error indicating that the provided amount is insufficient.
     error MainEngine__InSufficientAmount();
-    /// @notice Error indicating that joining the community has failed.
     error MainEngine__JoinCommunityFailed();
-    /// @notice Error indicating that the user is already a member of the community.
     error MainEngine__AlreadyAMember();
-    /// @notice Error indicating that the product already exists.
     error MainEngine__ProductAlreadyExists();
-    /// @notice Error indicating that the product is not existing.
     error MainEngine__ProductNotExisting();
-    /// @notice Error indicating that the product is not approved.
     error MainEngine__ProductNotApproved();
-    /// @notice Error indicating that the voting is ongoing.
     error MainEngine__VotingOngoing();
-    /// @notice Error indicating that the user is unauthorized to perform an action.
-    error MainEngine__UnAuthorised();
-    /// @notice Error indicating that the user is unauthorized to perform an action.
+    error MainEngine__UnAuthorised(address user);
     error MainEngine__ProductIsInMarketPlace();
-    /// @notice Error indicating that the user has not met the threshold.
     error MainEngine__UserActivityPointIsLOW();
 
-    /////////////////////////
-    //   State Variables  //
-    ////////////////////////
-
-    /// @notice Address of the creator protocol.
+    /*//////////////////////////////////////////////////////////////
+                            STATE VARIABLES
+    ////////////////////////////////////////////////////////////*/
     address private immutable creatorProtocol;
-    /// @notice Instance of the CustomERC20 Token.
-    CustomERC20Token private immutable artBlockToken;
-    /// @notice Address of the governance contract.
-    address private govContract;
-    /// @notice Address of the voting contract.
-    address private votingContractAddr;
-    /// @notice Address of the ArtBlock NFT contract.
-    address private artBlockNFTContract;
-    /// @notice Precision value for token calculations.
-    uint256 private PRECESSION = 10 ** 18;
-    /// @notice Minimum amount to create a community.
-    uint256 private constant COMMUNITY_CREATION_FEE = 1000;
-    /// @notice Rate of the platform native token.
-    uint256 public baseRate = 0.5 ether;
-    /// @notice Exponent value for token calculations.
-    uint256 public exponent = 1;
-    /// @notice Rate of the community token.
-    uint256 public baseCommunityTokenRate = 0.2 ether; // 1 ArtBlock token equals 5 community tokens
 
-    //////////////////////
-    ////// Structs  //////
-    //////////////////////
+    CustomERC20Token private immutable artBlockToken;
+
+    address private govContract;
+    address private votingContractAddr;
+    address private artBlockNFTContract;
+    uint256 private PRECESSION = 10 ** 18;
+    uint256 private constant COMMUNITY_CREATION_FEE = 1000;
+    uint256 public baseRate = 0.5 ether;
+    uint256 public exponent = 1;
+    uint256 public baseCommunityTokenRate = 0.2 ether;
+
+    /*//////////////////////////////////////////////////////////////
+                                STRUCTS
+    //////////////////////////////////////////////////////////////*/
 
     /// @notice Struct to store community information.
     struct CommunityInfo {
@@ -117,10 +97,7 @@ contract MainEngine {
     struct ProductBase {
         uint256 stakeAmount;
         bool stackReturned;
-        uint256 upvotes;
-        uint256 downvotes;
         uint256 productSubmittedTime;
-        bool approved;
         bool exists;
         bool isExclusive;
     }
@@ -136,69 +113,46 @@ contract MainEngine {
         address currentCommunity;
     }
 
-    //////////////////////
-    ////// Mappings  /////
-    //////////////////////
+    /*//////////////////////////////////////////////////////////////
+                                MAPPINGS
+    //////////////////////////////////////////////////////////////*/
 
-    /// @notice Mapping from community token address to community information.
-    mapping(address => CommunityInfo) public communityInfo;
-    /// @notice Mapping from community creator address to a list of their communities.
-    mapping(address => CommunityInfo[]) public creatorCommunities;
-    /// @notice Mapping from user address to a list of community tokens they are part of.
-    mapping(address => address[]) public userCommunities;
-    /// @notice Mapping from user address and community token address to membership status.
-    mapping(address => mapping(address => bool)) public isCommunityMember;
-    /// @notice Mapping from product ID to basic product information.
-    mapping(bytes32 => ProductBase) public productBaseInfo;
-    /// @notice Mapping from product ID to detailed product information.
-    mapping(bytes32 => Product) public productInfo;
-    /// @notice Mapping from user address and community token address to a list of their products.
-    mapping(address => mapping(address => bytes4[])) public userProducts;
-    /// @notice Mapping from user address and community token address to a list of products they have bought.
-    mapping(address => mapping(address => bytes4[])) public userBuyedProducts;
-    /// @notice Mapping from user address and community token address to a count activity points.
-    mapping(address => mapping(address => uint256)) public userActivityPoints;
-    /// @notice Mapping from community token address to a community activity points.
-    mapping(address => uint256) public communityActivityPoints;
+    mapping(address communityToken => CommunityInfo communityInformation) public communityInfo;
+    mapping(address creatorAddress => CommunityInfo[] listOfCommunities) public creatorCommunities;
+    mapping(address userAddress => address[]) public userCommunities;
+    mapping(address userAddress => mapping(address communityToken => bool)) public isCommunityMember;
+    mapping(bytes4 productID => ProductBase productBasicInfo) public productBaseInfo;
+    mapping(bytes4 productID => Product productDetailedInfo) public productInfo;
+    mapping(address userAddress => mapping(address communityToken => bytes4[] productIDList)) public userProducts;
+    mapping(address userAddress => mapping(address communityToken => bytes4[] productIDList)) public userBuyedProducts;
+    mapping(address userAddress => mapping(address communityToken => uint256 points)) public userActivityPoints;
+    mapping(address communityToken => uint256 communityPoints) public communityActivityPoints;
 
-    /////////////////////
-    ////// Arrays  //////
-    /////////////////////
+    /*//////////////////////////////////////////////////////////////
+                                 ARRAYS
+    //////////////////////////////////////////////////////////////*/
 
-    /// @notice List of community token addresses.
     address[] public communityTokens;
 
-    ////////////////
-    //   Events  //
-    ////////////////
+    /*//////////////////////////////////////////////////////////////
+                                 EVENTS
+    //////////////////////////////////////////////////////////////*/
 
-    /// @notice Event emitted when a user buys ArtBlock tokens.
-    /// @param user The address of the user who bought the tokens.
-    /// @param amountABT The amount of tokens bought.
     event ABTBoughtByUser(address indexed user, uint256 indexed amountABT);
 
-    /// @notice Event emitted when a community is created.
-    /// @param communityName The name of the community.
-    /// @param communityCreator The address of the community creator.
-    /// @param communityToken The address of the community token.
     event CommunityCreated(
         string indexed communityName, address indexed communityCreator, address indexed communityToken
     );
 
-    /// @notice Event emitted when a user joins a community.
-    /// @param user The address of the user.
-    /// @param communityToken The address of the community token.
     event JoinedCommunity(address indexed user, address indexed communityToken);
 
-    /// @notice Event emitted when a product is submitted.
-    /// @param productId The ID of the product.
-    /// @param author The address of the product author.
-    /// @param stakeAmount The amount staked for the product.
-    event ProductSubmitted(bytes32 indexed productId, address indexed author, uint256 indexed stakeAmount);
+    event ProductSubmitted(bytes4 indexed productId, address indexed author, uint256 indexed stakeAmount);
 
-    /////////////////
-    //  Modifiers  //
-    /////////////////
+    event ProductApproved(bytes4 indexed productId, address indexed communityToken);
+
+    /*//////////////////////////////////////////////////////////////
+                               MODIFIERS
+    //////////////////////////////////////////////////////////////*/
 
     /// @notice Modifier to restrict access to functions to only the deployer.
     modifier onlyDeployer() {
@@ -206,23 +160,24 @@ contract MainEngine {
         _;
     }
 
-    /// @notice Modifier to ensure that the product is approved and exists.
-    /// @param productId The ID of the product.
-    modifier productIsApprovedANDExists(bytes4 productId) {
-        ProductBase memory tempProdBaseInfo = productBaseInfo[productId];
-        if (!tempProdBaseInfo.exists) {
+    /// @notice Modifier to ensure that the product exists.
+    modifier productExists(bytes4 productId) {
+        if (!productBaseInfo[productId].exists) {
             revert MainEngine__ProductNotExisting();
         }
+        _;
+    }
+
+    /// @notice Modifier to ensure that the product is approved.
+    modifier productIsApproved(bytes4 productId) {
         if (!IVotingContract(votingContractAddr).isApproved(productId)) {
             revert MainEngine__ProductNotApproved();
         }
         _;
     }
 
-    modifier productExistsAndHasListedTimePassed(bytes4 productId) {
-        if (!productBaseInfo[productId].exists) {
-            revert MainEngine__ProductNotExisting();
-        }
+    /// @notice Modifier to ensure that the voting time has passed.
+    modifier votingTimePassed(bytes4 productId) {
         if (
             productBaseInfo[productId].productSubmittedTime + IVotingContract(votingContractAddr).getVotingDuration()
                 > block.timestamp
@@ -234,7 +189,7 @@ contract MainEngine {
 
     modifier isOwner(bytes4 productId) {
         if (productInfo[productId].currentOwner != msg.sender) {
-            revert MainEngine__UnAuthorised();
+            revert MainEngine__UnAuthorised(msg.sender);
         }
         _;
     }
@@ -248,7 +203,7 @@ contract MainEngine {
 
     modifier canPostProductToSell(bytes4 productId) {
         if (productInfo[productId].currentOwner != msg.sender) {
-            revert MainEngine__UnAuthorised();
+            revert MainEngine__UnAuthorised(msg.sender);
         }
         if (productInfo[productId].isListedOnMarketPlace) {
             revert MainEngine__ProductIsInMarketPlace();
@@ -259,9 +214,9 @@ contract MainEngine {
         _;
     }
 
-    /////////////////
-    //  Functions  //
-    /////////////////
+    /*//////////////////////////////////////////////////////////////
+                               FUNCTIONS
+    //////////////////////////////////////////////////////////////*/
 
     /**
      * @notice Constructor to initialize the MainEngine contract.
@@ -272,9 +227,9 @@ contract MainEngine {
         artBlockToken = new CustomERC20Token("ARTBLOCKTOKEN", "ABT", address(this));
     }
 
-    //////////////////////////
-    //  External Functions  //
-    //////////////////////////
+    /*//////////////////////////////////////////////////////////////
+                           EXTERNAL FUNCTIONS
+    //////////////////////////////////////////////////////////////*/
 
     /**
      * @notice Function to create a new community.
@@ -333,18 +288,8 @@ contract MainEngine {
      * @param amount The number of ArtBlock tokens to buy.
      */
     function buyArtBlockToken(address to, uint256 amount) public payable {
-        require(amount > 0, "Amount must be greater than zero");
-        // Implemented bonding curve
-        uint256 currentSupply = artBlockToken.totalSupply() == 0 ? 1 : artBlockToken.totalSupply();
-        uint256 pricePerToken = baseRate * (currentSupply ** exponent); // overflows or underflow can happen
-
+        uint256 pricePerToken = getArtBlockRate();
         uint256 totalCost = pricePerToken * amount;
-
-        // check if the user has sent the specified amount of ether to buy the ABT token
-        console.log("Token Rate: ", pricePerToken);
-        console.log("Total Cost: ", totalCost);
-        console.log("msg.value: ", msg.value);
-
         if (totalCost != msg.value) {
             revert MainEngine__InSufficientAmount();
         }
@@ -360,37 +305,19 @@ contract MainEngine {
         emit ABTBoughtByUser(to, amount);
     }
 
-    // /**
-    //  * @notice Function to buy community tokens by sending ArtBlock tokens.
-    //  * @param to The address of the user who is buying the community tokens.
-    //  * @param amount The number of ArtBlock tokens to buy the community tokens.
-    //  * @param communityToken The address of the community token.
-    //  */
-    // function buyCommunityToken(address to, uint256 amount, address communityToken) public payable {
-    //     if (artBlockToken.balanceOf(to) < amount) {
-    //         // ToDo : Need to change the tokenRate through GovernanceContract
-    //         revert MainEngine__InSufficientAmount();
-    //     }
-    //     artBlockToken.burnFrom(to, amount);
-    //     CustomERC20Token(communityToken).mint(to, amount * PRECESSION);
-    // }
-
+    /**
+     * @notice Function to buy community tokens by sending ArtBlock tokens.
+     * @param to The address of the user who is buying the community tokens.
+     * @param amount The number of ArtBlock tokens to buy the community tokens.
+     * @param communityToken The address of the community token.
+     */
     function buyCommunityToken(address to, uint256 amount, address communityToken) public {
-        uint256 communityPoints = communityActivityPoints[communityToken];
-        uint256 userPoints = userActivityPoints[to][communityToken];
-        uint256 rateAdjustment = calculateRateAdjustment(communityPoints, userPoints);
-
-        uint256 tokenRate = baseCommunityTokenRate * rateAdjustment / 1 ether; // Adjust the rate proportionally
-        uint256 cost = amount * tokenRate / 1 ether; // Adjust for Solidity's lack of floating point
-
-        console.log("Cost: ", cost);
-        console.log("User balance: ", artBlockToken.balanceOf(to));
-
+        uint256 cost = getCommunityTokenCost(to, amount, communityToken);
         if (artBlockToken.balanceOf(to) < cost) {
             revert MainEngine__InSufficientAmount();
         }
 
-        artBlockToken.transfer(address(this), cost);
+        artBlockToken.transferFrom(to, address(this), cost * PRECESSION);
         CustomERC20Token(communityToken).mint(to, amount * PRECESSION);
     }
 
@@ -402,8 +329,11 @@ contract MainEngine {
      * @param isExclusive Whether the product is exclusive.
      */
     function submitNewProduct(string memory metadata, address commToken, uint256 price, bool isExclusive) external {
+        // console.log("Community Creator: ", communityInfo[commToken].communityCreator);
+        // console.log("Sender: ", msg.sender);
+
         if (communityInfo[commToken].communityCreator != msg.sender) {
-            revert MainEngine__UnAuthorised();
+            revert MainEngine__UnAuthorised(msg.sender);
         }
 
         // Generate a unique product ID using keccak256
@@ -413,17 +343,17 @@ contract MainEngine {
 
         uint256 stakedAmount = getStackAmountFromPrice(price, isExclusive);
 
-        console.log("Products Price: ", price);
-        console.log("Staked Amount: ", stakedAmount);
-
+        // @error ERC20InsufficientAllowance
+        // console.log("MainEngine::StacekdAMount: ", stakedAmount);
+        // console.log("MainEngine::Custom token balance: ", CustomERC20Token(commToken).balanceOf(msg.sender));
+        // console.log(
+        //     "MainEngine::Custom token Allowance", CustomERC20Token(commToken).allowance(msg.sender, address(this))
+        // );
         CustomERC20Token(commToken).transferFrom(msg.sender, address(this), stakedAmount);
 
         productBaseInfo[productId] = ProductBase({
             stakeAmount: stakedAmount,
             stackReturned: false,
-            upvotes: 0,
-            downvotes: 0,
-            approved: false,
             exists: true,
             isExclusive: isExclusive,
             productSubmittedTime: block.timestamp
@@ -449,24 +379,26 @@ contract MainEngine {
      * @param productId The ID of the product to check.
      * @return bool indicating if the product is approved.
      */
-    function checkProductApproval(bytes4 productId)
-        external
-        productExistsAndHasListedTimePassed(productId)
-        returns (bool)
-    {
+    function checkProductApprovalStatus(bytes4 productId) external view returns (bool) {
         bool isApproved = IVotingContract(votingContractAddr).isApproved(productId);
+        return isApproved;
+    }
 
+    /**
+     * @notice Function to return the stacked amount of a product.
+     * @param productId The ID of the product
+     */
+    function returnStackedAmount(bytes4 productId) external votingTimePassed(productId) {
+        bool isApproved = IVotingContract(votingContractAddr).isApproved(productId);
         if (!productBaseInfo[productId].stackReturned) {
             if (isApproved) {
-                productBaseInfo[productId].approved = true;
+                emit ProductApproved(productId, productInfo[productId].currentCommunity);
                 returnStake(productId);
             } else {
                 returnStakeHalf(productId);
             }
             productBaseInfo[productId].stackReturned = true;
         }
-
-        return isApproved;
     }
 
     /**
@@ -497,10 +429,8 @@ contract MainEngine {
      */
     function canCalculateVotingResult(bytes4 productId) public view returns (bool) {
         ProductBase memory productBase = productBaseInfo[productId];
-        return !productBase.approved
-            && (
-                productBase.productSubmittedTime + IVotingContract(votingContractAddr).getVotingDuration() < block.timestamp
-            );
+        return
+            productBase.productSubmittedTime + IVotingContract(votingContractAddr).getVotingDuration() < block.timestamp;
     }
 
     /**
@@ -513,8 +443,9 @@ contract MainEngine {
         address commToken
     )
         public
-        productExistsAndHasListedTimePassed(productId)
-        productIsApprovedANDExists(productId)
+        productExists(productId)
+        productIsApproved(productId)
+        votingTimePassed(productId)
         isOwner(productId)
     {
         Product memory product = productInfo[productId];
@@ -537,7 +468,8 @@ contract MainEngine {
         address communityToken
     )
         public
-        productIsApprovedANDExists(productId)
+        productExists(productId)
+        productIsApproved(productId)
         hasEnoughBalanceToBuy(productId, communityToken)
     {
         Product memory product = productInfo[productId];
@@ -577,7 +509,8 @@ contract MainEngine {
         address community
     )
         external
-        productIsApprovedANDExists(productId)
+        productExists(productId)
+        productIsApproved(productId)
         canPostProductToSell(productId)
         isOwner(productId)
     {
@@ -706,6 +639,7 @@ contract MainEngine {
      * @return The basic product information.
      */
     function getProductBaseInfo(bytes4 productId) external view returns (ProductBase memory) {
+        require(productBaseInfo[productId].exists, "Product does not exist");
         return productBaseInfo[productId];
     }
 
@@ -721,10 +655,31 @@ contract MainEngine {
         return communityActivityPoints[communityToken];
     }
 
+    function getCommunityCreationFee() public pure returns (uint256) {
+        return COMMUNITY_CREATION_FEE;
+    }
+
     function getArtBlockRate() public view returns (uint256 pricePerToken) {
-        uint256 currentSupply = artBlockToken.totalSupply() == 0 ? 1 : artBlockToken.totalSupply();
-        console.log("comes here (before)");
-        pricePerToken = baseRate * (currentSupply ** exponent);
-        console.log("comes here (after)", pricePerToken);
+        uint256 currentSupply = artBlockToken.totalSupply() == 0 ? 1 : artBlockToken.totalSupply() / PRECESSION;
+        pricePerToken = baseRate + (currentSupply ** exponent);
+    }
+
+    function getProductStatus(bytes4 productId) external view returns (bool) {
+        return productBaseInfo[productId].exists;
+    }
+
+    function getProductSubmittedTime(bytes4 productId) external view returns (uint256) {
+        return productBaseInfo[productId].productSubmittedTime;
+    }
+
+    function getCommunityTokenCost(address to, uint256 amount, address communityToken) public view returns (uint256) {
+        uint256 communityPoints = communityActivityPoints[communityToken];
+        uint256 userPoints = userActivityPoints[to][communityToken];
+        uint256 rateAdjustment = calculateRateAdjustment(communityPoints, userPoints);
+
+        uint256 tokenRate = baseCommunityTokenRate * rateAdjustment / 1 ether; // Adjust the rate proportionally
+        uint256 cost = amount * tokenRate / 1 ether; // Adjust for Solidity's lack of floating point
+
+        return cost;
     }
 }

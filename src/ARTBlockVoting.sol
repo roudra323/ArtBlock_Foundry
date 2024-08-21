@@ -23,20 +23,14 @@
 
 pragma solidity ^0.8.20;
 
+import { console } from "forge-std/Test.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
-struct ProductBase {
-    uint256 stakeAmount;
-    uint256 upvotes;
-    uint256 downvotes;
-    uint256 productSubmittedTime;
-    bool approved;
-    bool exists;
-}
-
 interface IMainEngine {
-    function getProductBaseInfo(bytes32 productId) external view returns (ProductBase memory);
+    // function getProductBaseInfo(bytes4 productId) external view returns (ProductBase memory);
     function getTokenAddress() external view returns (address);
+    function getProductStatus(bytes4 productId) external view returns (bool);
+    function getProductSubmittedTime(bytes4 productId) external view returns (uint256);
 }
 
 contract VotingContract {
@@ -53,13 +47,22 @@ contract VotingContract {
     ////////////////////////
     address private immutable mainEngineAddress;
     address private immutable artBlockToken;
-    uint256 private constant VOTING_PRECISION = 10e8;
     uint256 private constant VOTING_DURATION = 7 days;
 
-    //////////////////////
-    ////// Mappings  /////
-    //////////////////////
-    mapping(bytes4 productID => ProductBase) public productsVotingInfo;
+    /*//////////////////////////////////////////////////////////////
+                                STRUCTS
+    //////////////////////////////////////////////////////////////*/
+
+    struct ProductVotingInfo {
+        uint256 upvotes;
+        uint256 downvotes;
+        bool approved;
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                                MAPPINGS
+    //////////////////////////////////////////////////////////////*/
+    mapping(bytes4 productID => ProductVotingInfo) public productsVotingInfo;
 
     ////////////////
     //   Events  //
@@ -95,20 +98,18 @@ contract VotingContract {
      * @param isUPVote Boolean indicating if the vote is an upvote
      */
     function voteForProduct(bytes4 productId, address communityToken, bool isUPVote) external {
-        ProductBase memory productBase = productsVotingInfo[productId];
-
-        if (!IMainEngine(mainEngineAddress).getProductBaseInfo(productId).exists) {
+        if (!IMainEngine(mainEngineAddress).getProductStatus(productId)) {
             revert VotingContract__ProductDoesntExist(productId);
         }
 
-        if (productBase.approved) {
+        if (productsVotingInfo[productId].approved) {
             revert VotingContract__ProductAlreadyApproved(productId);
         }
 
         if (isUPVote) {
-            productBase.upvotes += calculateVoteWeight(msg.sender, communityToken);
+            productsVotingInfo[productId].upvotes += calculateVoteWeight(msg.sender, communityToken);
         } else {
-            productBase.downvotes += calculateVoteWeight(msg.sender, communityToken);
+            productsVotingInfo[productId].downvotes += calculateVoteWeight(msg.sender, communityToken);
         }
         emit VoteCasted(productId, communityToken, isUPVote);
     }
@@ -117,23 +118,19 @@ contract VotingContract {
      * @notice Calculate the voting result for a product
      * @param productId ID of the product to calculate the voting result for
      */
-    function calculateVotingResult(bytes4 productId) external view onlyMainEngine {
-        ProductBase memory productBase = productsVotingInfo[productId];
+    function calculateVotingResult(bytes4 productId) external onlyMainEngine {
+        ProductVotingInfo memory productBase = productsVotingInfo[productId];
 
         if (productBase.approved) {
             revert VotingContract__ProductAlreadyApproved(productId);
         }
 
-        if (
-            IMainEngine(mainEngineAddress).getProductBaseInfo(productId).productSubmittedTime + VOTING_DURATION
-                >= block.timestamp
-        ) {
+        if (IMainEngine(mainEngineAddress).getProductSubmittedTime(productId) + VOTING_DURATION >= block.timestamp) {
             revert VotingContract__VotingOnGoing(productId);
         }
 
         if (productBase.upvotes > productBase.downvotes) {
-            productBase.approved = true;
-            productBase.exists = true;
+            productsVotingInfo[productId].approved = true;
         }
     }
 
@@ -150,19 +147,18 @@ contract VotingContract {
     function calculateVoteWeight(address user, address community) internal view returns (uint256 totalVotes) {
         uint256 userCommunitytoken = IERC20(community).balanceOf(user);
         uint256 userArtBlockToken = IERC20(artBlockToken).balanceOf(user);
-        uint256 communityTokenWeight = (userCommunitytoken * 6 * VOTING_PRECISION) / 10; // 60% weightage of the
+        uint256 communityTokenWeight = (userCommunitytoken * 6) / 10; // 60% weightage of the
             // community token
-
-        uint256 artblockTokenWeight = (userArtBlockToken * 4 * VOTING_PRECISION) / 10; // 40% weightage of the artblock
+        uint256 artblockTokenWeight = (userArtBlockToken * 4) / 10; // 40% weightage of the artblock
             // token
-        totalVotes = (communityTokenWeight + artblockTokenWeight);
+        totalVotes = (communityTokenWeight + artblockTokenWeight) / 1 ether;
     }
 
     //////////////////////////////
     ///// Getter Functions  //////
     //////////////////////////////
 
-    function getProductVotingInfo(bytes4 productId) external view returns (ProductBase memory) {
+    function getProductVotingInfo(bytes4 productId) external view returns (ProductVotingInfo memory) {
         return productsVotingInfo[productId];
     }
 
@@ -174,12 +170,7 @@ contract VotingContract {
         return productsVotingInfo[productId].approved;
     }
 
-    /**
-     * @notice Converts bytes4 to uint32
-     * @param input bytes4 input
-     * @return output uint32 output
-     */
-    function bytes4ToUint32(bytes4 input) public pure returns (uint32 output) {
-        output = (uint32(bytes4(input)));
+    function getVotingWeight(address user, address community) external view returns (uint256) {
+        return calculateVoteWeight(user, community);
     }
 }

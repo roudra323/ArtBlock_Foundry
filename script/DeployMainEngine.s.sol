@@ -3,11 +3,14 @@ pragma solidity ^0.8.20;
 
 import { Script } from "forge-std/Script.sol";
 import { MainEngine } from "../src/MainEngine.sol";
+import { VotingContract } from "../src/ARTBlockVoting.sol";
 
 contract DeployMainEngine is Script {
-    function run() public returns (MainEngine deployedContract) {
+    function run() public returns (MainEngine deployedContract, VotingContract deployedVotingContract) {
         vm.startBroadcast(makeAddr("CREATOR"));
         deployedContract = new MainEngine();
+        deployedVotingContract = new VotingContract(address(deployedContract));
+        deployedContract.setVotingContract(address(deployedVotingContract));
         vm.stopBroadcast();
     }
 }
