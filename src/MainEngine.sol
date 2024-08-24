@@ -77,7 +77,7 @@ contract MainEngine {
     uint256 private constant COMMUNITY_CREATION_FEE = 1000;
     uint256 public baseRate = 0.5 ether;
     uint256 public exponent = 1;
-    uint256 public baseCommunityTokenRate = 0.2 ether;
+    uint256 public BASE_COMMUNITY_TOKEN_RATE = 0.2 ether; // 0.2 * 1e18
 
     /*//////////////////////////////////////////////////////////////
                                 STRUCTS
@@ -564,15 +564,15 @@ contract MainEngine {
      * @param communityPoints community points
      * @param userPoints use engagement points
      */
-    function calculateRateAdjustment(uint256 communityPoints, uint256 userPoints) internal pure returns (uint256) {
-        uint256 rateIncrease = communityPoints / 1000; // Example: rate increases by 1% for every 1000 points
-        uint256 userDiscount = userPoints / 100; // Example: 1% discount for every 100 points
-        uint256 adjustment = 1 ether + (rateIncrease * 1 ether / 100) - (userDiscount * 1 ether / 100);
+    function calculateRateAdjustment(uint256 communityPoints, uint256 userPoints) internal view returns (uint256) {
+        uint256 rateIncrease = (communityPoints * PRECESSION) / 1000; // 0.1% increase per 1000 points
+        uint256 userDiscount = (userPoints * PRECESSION) / 100; // 1% discount per 100 points
 
-        if (adjustment < 1 ether) {
-            return 1 ether; // Ensure rate never goes below 1 ether
+        if (userDiscount > rateIncrease) {
+            return PRECESSION; // Ensure rate never goes below 1 (100%)
         }
-        return adjustment;
+
+        return PRECESSION + rateIncrease - userDiscount;
     }
 
     /////////////////////////////
@@ -677,8 +677,9 @@ contract MainEngine {
         uint256 userPoints = userActivityPoints[to][communityToken];
         uint256 rateAdjustment = calculateRateAdjustment(communityPoints, userPoints);
 
-        uint256 tokenRate = baseCommunityTokenRate * rateAdjustment / 1 ether; // Adjust the rate proportionally
-        uint256 cost = amount * tokenRate / 1 ether; // Adjust for Solidity's lack of floating point
+        uint256 adjustedRate = (BASE_COMMUNITY_TOKEN_RATE * rateAdjustment) / PRECESSION; // Adjust the rate
+            // proportionally
+        uint256 cost = (amount * adjustedRate) / PRECESSION; // Adjust for Solidity's lack of floating point
 
         return cost;
     }
