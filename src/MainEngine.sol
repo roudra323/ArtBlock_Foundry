@@ -329,8 +329,8 @@ contract MainEngine {
      * @param isExclusive Whether the product is exclusive.
      */
     function submitNewProduct(string memory metadata, address commToken, uint256 price, bool isExclusive) external {
-        // console.log("Community Creator: ", communityInfo[commToken].communityCreator);
-        // console.log("Sender: ", msg.sender);
+        console.log("Community Creator: ", communityInfo[commToken].communityCreator);
+        console.log("Sender: ", msg.sender);
 
         if (communityInfo[commToken].communityCreator != msg.sender) {
             revert MainEngine__UnAuthorised(msg.sender);
@@ -365,7 +365,7 @@ contract MainEngine {
             isListedForResell: false,
             isListedOnMarketPlace: false,
             author: msg.sender,
-            currentOwner: msg.sender,
+            currentOwner: address(0),
             currentCommunity: commToken
         });
 
@@ -407,7 +407,7 @@ contract MainEngine {
      */
     function returnStake(bytes4 productId) private {
         CustomERC20Token(productInfo[productId].currentCommunity).transfer(
-            productInfo[productId].currentOwner, productBaseInfo[productId].stakeAmount
+            productInfo[productId].author, productBaseInfo[productId].stakeAmount
         );
     }
 
@@ -418,7 +418,7 @@ contract MainEngine {
     function returnStakeHalf(bytes4 productId) private {
         uint256 halfStakeValue = (productBaseInfo[productId].stakeAmount * 50) / 100;
         CustomERC20Token(productInfo[productId].currentCommunity).transfer(
-            productInfo[productId].currentOwner, halfStakeValue
+            productInfo[productId].author, halfStakeValue
         );
     }
 
@@ -434,11 +434,11 @@ contract MainEngine {
     }
 
     /**
-     * @notice Function to list the product in the marketplace.
+     * @notice The author of the product can list the product after the product is approved by voting.
      * @param productId The ID of the product for which to calculate the voting result.
      * @param commToken The address of the community token.
      */
-    function listProductToMarketPlace(
+    function listProductToAuthorsCommunity(
         bytes4 productId,
         address commToken
     )
@@ -446,16 +446,19 @@ contract MainEngine {
         productExists(productId)
         productIsApproved(productId)
         votingTimePassed(productId)
-        isOwner(productId)
     {
-        Product memory product = productInfo[productId];
-        if (product.currentOwner != product.author) {
-            if (productBaseInfo[productId].isExclusive) {
-                IArtBlockNFT(artBlockNFTContract).safeMint(msg.sender, productInfo[productId].metadata, productId);
-            }
-            productInfo[productId].isListedOnMarketPlace = true;
-            productInfo[productId].currentCommunity = commToken;
+        if (productInfo[productId].author != msg.sender) {
+            revert MainEngine__UnAuthorised(msg.sender);
         }
+        require(productBaseInfo[productId].stackReturned, "MainEngine__Stacked Amount is not returned");
+        console.log("Here comes the execution");
+
+        // @error Evm revert
+        if (productBaseInfo[productId].isExclusive) {
+            IArtBlockNFT(artBlockNFTContract).safeMint(msg.sender, productInfo[productId].metadata, productId);
+        }
+        productInfo[productId].isListedOnMarketPlace = true;
+        productInfo[productId].currentCommunity = commToken;
     }
 
     /**
@@ -475,9 +478,11 @@ contract MainEngine {
         Product memory product = productInfo[productId];
         if (product.isListedOnMarketPlace && isCommunityMember[msg.sender][communityToken]) {
             if (product.currentOwner != product.author) {
-                CustomERC20Token(communityToken).transferFrom(msg.sender, product.author, (product.price * 3) / 100);
                 CustomERC20Token(communityToken).transferFrom(
-                    msg.sender, product.currentOwner, (product.price * 97) / 100
+                    msg.sender, product.author, (product.price * PRECESSION * 3) / 100
+                );
+                CustomERC20Token(communityToken).transferFrom(
+                    msg.sender, product.currentOwner, (product.price * PRECESSION * 97) / 100
                 );
             } else {
                 CustomERC20Token(communityToken).transferFrom(msg.sender, product.currentOwner, product.price);
@@ -499,11 +504,12 @@ contract MainEngine {
     }
 
     /**
+     * @notice Function to list a product for selling to the community.
      * @param productId The ID of the product to vote for.
      * @param price     The price of the product.
      * @param community The address of the community token.
      */
-    function sellProdToComm(
+    function listProductToCommunityForSelling(
         bytes4 productId,
         uint256 price,
         address community
@@ -520,7 +526,7 @@ contract MainEngine {
 
         productInfo[productId].price = price;
         // transfer 3% of product price to the community creator
-        CustomERC20Token(community).transfer(communityInfo[community].communityCreator, (price * 3) / 100);
+        CustomERC20Token(community).transfer(communityInfo[community].communityCreator, (price * 3 * PRECESSION) / 100);
         productInfo[productId].isListedOnMarketPlace = true;
         productInfo[productId].currentCommunity = community;
 
@@ -528,9 +534,9 @@ contract MainEngine {
         increasePoints(msg.sender, community);
     }
 
-    /////////////////////////////
-    /////  Internal Functions  //
-    /////////////////////////////
+    /*//////////////////////////////////////////////////////////////
+                           INTERNAL FUNCTIONS
+    //////////////////////////////////////////////////////////////*/
 
     /**
      * @notice Internal function to calculate the stake amount from the price.
@@ -544,8 +550,7 @@ contract MainEngine {
                 // price
         } else {
             return (price * 15 * PRECESSION) / 100; // If the product is not exclusive then the stake amount is 15% of
-                // the
-                // price
+                // the price
         }
     }
 
@@ -641,6 +646,11 @@ contract MainEngine {
     function getProductBaseInfo(bytes4 productId) external view returns (ProductBase memory) {
         require(productBaseInfo[productId].exists, "Product does not exist");
         return productBaseInfo[productId];
+    }
+
+    function getProductDetailedInfo(bytes4 productId) external view returns (Product memory) {
+        require(productBaseInfo[productId].exists, "Product does not exist");
+        return productInfo[productId];
     }
 
     function getTotalMemberOfCommunity(address communityToken) public view returns (uint256) {

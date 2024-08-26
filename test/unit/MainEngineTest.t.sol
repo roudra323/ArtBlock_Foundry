@@ -206,4 +206,128 @@ contract MainEngineTest is Test {
             // assertEq(mainEngine.getProductBaseInfo(userProductID).approved, false);
         }
     }
+
+    /*//////////////////////////////////////////////////////////////
+                             Helper Functions      
+    //////////////////////////////////////////////////////////////*/
+    // Add this function to your contract or to a separate utility library
+    function bytes32ToString(bytes32 _bytes32) public pure returns (string memory) {
+        uint8 i = 0;
+        while (i < 32 && _bytes32[i] != 0) {
+            i++;
+        }
+        bytes memory bytesArray = new bytes(i);
+        for (i = 0; i < 32 && _bytes32[i] != 0; i++) {
+            bytesArray[i] = _bytes32[i];
+        }
+        return string(bytesArray);
+    }
+
+    function buyArtBlockTokenMod(address toAccount, uint256 tokenAmount) public {
+        vm.startPrank(toAccount);
+        artBlockToken.approve(address(mainEngine), tokenAmount * PRECESSION);
+        vm.stopPrank();
+        uint256 tokenRate = mainEngine.getArtBlockRate();
+        uint256 amountToPay = tokenRate * tokenAmount;
+        vm.deal(toAccount, amountToPay);
+        mainEngine.buyArtBlockToken{ value: amountToPay }(toAccount, tokenAmount);
+    }
+
+    function createCommunityMod(address creator) public {
+        string memory communityName = "ART Community";
+        string memory communityDescription = "People can sell their art here";
+        string memory tokenName = "PeopleArtToken";
+        string memory tokenSymbol = "PAT";
+
+        uint256 tokenRate = mainEngine.getArtBlockRate();
+        uint256 amountToPay = tokenRate * TOKEN_AMOUNT;
+
+        vm.startPrank(creator);
+        artBlockToken.approve(address(mainEngine), amountToPay);
+        vm.stopPrank();
+        mainEngine.createCommunity(communityName, communityDescription, tokenName, tokenSymbol, creator);
+    }
+
+    function joinCommunity(address user, address communityTokenAddress) public {
+        vm.prank(user);
+        mainEngine.joinCommunity(communityTokenAddress);
+    }
+
+    function buyCommunityTokenMod(address toAccount, uint256 amount, address communityTokenAddress) public {
+        uint256 communityTokenCost = mainEngine.getCommunityTokenCost(toAccount, amount, communityTokenAddress);
+        buyArtBlockTokenMod(toAccount, communityTokenCost);
+        // mainEngine.buyArtBlockToken{ value: communityTokenCost }(toAccount, communityTokenCost);
+        mainEngine.buyCommunityToken(toAccount, amount, communityTokenAddress);
+    }
+
+    function submitProductToCommunity(address creator, address communityTokenAddress, bool _isExclusive) public {
+        uint256 productPrice = 1000;
+        string memory metaData = "https://www.artwork.com Artwork A beautiful piece of art";
+        bool isExclusive = _isExclusive;
+        buyCommunityTokenMod(creator, productPrice, communityTokenAddress);
+        vm.startPrank(creator);
+        CustomERC20Token(communityTokenAddress).approve(address(mainEngine), productPrice * PRECESSION);
+        mainEngine.submitNewProduct(metaData, communityTokenAddress, productPrice, isExclusive);
+        vm.stopPrank();
+    }
+
+    modifier tillSubmitProduct() {
+        bool isExclusive = false;
+        // Initial setup
+        uint256 createCommunityTokenAmount = mainEngine.getCommunityCreationFee();
+        buyArtBlockTokenMod(COMMUNITY_CREATOR, createCommunityTokenAmount);
+        createCommunityMod(COMMUNITY_CREATOR);
+        address communityTokenAddress = mainEngine.communityTokens(0);
+        // Submit product
+        submitProductToCommunity(COMMUNITY_CREATOR, communityTokenAddress, isExclusive);
+        _;
+    }
+
+    function tillProductApprovedAndStackReturned() public tillSubmitProduct {
+        address communityTokenAddress = mainEngine.communityTokens(0);
+        bytes4 userProductID = mainEngine.userProducts(COMMUNITY_CREATOR, communityTokenAddress, 0);
+        uint256 productSubmittedTime = mainEngine.getProductBaseInfo(userProductID).productSubmittedTime;
+        uint256 tokenToMint = 1000;
+        bool upVoteORdownVote = true;
+
+        // join community
+        for (uint256 i = 1; i <= 5; i++) {
+            address user = address(uint160(i));
+
+            vm.startPrank(user);
+            mainEngine.joinCommunity(communityTokenAddress);
+            vm.stopPrank();
+
+            buyArtBlockTokenMod(user, tokenToMint * i);
+            buyCommunityTokenMod(user, tokenToMint * (7 - i), communityTokenAddress);
+
+            vm.startPrank(user);
+            votingContract.voteForProduct(userProductID, communityTokenAddress, upVoteORdownVote);
+            vm.stopPrank();
+            // Advance the block to ensure pranks don't overlap
+            vm.roll(block.number + 1);
+        }
+        vm.warp(productSubmittedTime + 8 days);
+        vm.prank(address(mainEngine));
+        votingContract.calculateVotingResult(userProductID);
+        // return the full stacked amount
+        mainEngine.returnStackedAmount(userProductID);
+    }
+
+    function test_list_product_to_community() public {
+        tillProductApprovedAndStackReturned();
+        address communityTokenAddress = mainEngine.communityTokens(0);
+        bytes4 userProductID = mainEngine.userProducts(COMMUNITY_CREATOR, communityTokenAddress, 0);
+
+        console.log("Communnity token address: ", communityTokenAddress);
+
+        address currentCommunityBEF = mainEngine.getProductDetailedInfo(userProductID).currentCommunity;
+        console.log("Current Community (Before): ", currentCommunityBEF);
+        vm.prank(COMMUNITY_CREATOR);
+        mainEngine.listProductToAuthorsCommunity(userProductID, communityTokenAddress);
+
+        address currentCommunity = mainEngine.getProductDetailedInfo(userProductID).currentCommunity;
+        console.log("Current Community (After): ", currentCommunity);
+        assertEq(mainEngine.getProductDetailedInfo(userProductID).isListedOnMarketPlace, true);
+    }
 }
