@@ -12,7 +12,7 @@ contract ArtBlockNFT is ERC721, ERC721Enumerable, ERC721URIStorage, Ownable {
 
     mapping(bytes4 productId => uint256 tokenId) public productToTokenId;
 
-    constructor(address MainEngine) ERC721("ArtBlockNFT", "ATBNFT") Ownable(MainEngine) { }
+    constructor() ERC721("ArtBlockNFT", "ATBNFT") Ownable(msg.sender) { }
 
     function safeMint(address to, string memory uri, bytes4 productId) external onlyOwner {
         uint256 tokenId = _nextTokenId++;
@@ -27,6 +27,10 @@ contract ArtBlockNFT is ERC721, ERC721Enumerable, ERC721URIStorage, Ownable {
 
     function getTokenId(bytes4 tokenId) external view returns (uint256) {
         return productToTokenId[tokenId];
+    }
+
+    function getTokenIdByProductId(bytes4 productId) external view returns (uint256) {
+        return productToTokenId[productId];
     }
 
     // The following functions are overrides required by Solidity.

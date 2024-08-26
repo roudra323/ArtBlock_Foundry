@@ -7,11 +7,13 @@ import { MainEngine } from "../../src/MainEngine.sol";
 import { VotingContract } from "../../src/ARTBlockVoting.sol";
 import { ERC20Mock } from "@openzeppelin/contracts/mocks/token/ERC20Mock.sol";
 import { CustomERC20Token } from "../../src/CustomERC20Token.sol";
+import { ArtBlockNFT } from "../../src/ArtBlockNFT.sol";
 
 contract MainEngineTest is Test {
     MainEngine mainEngine;
     VotingContract votingContract;
     CustomERC20Token artBlockToken;
+    ArtBlockNFT artBlockNFT;
 
     uint256 private PRECESSION = 10 ** 18;
     uint256 private immutable TOKEN_AMOUNT = 200_000;
@@ -26,7 +28,7 @@ contract MainEngineTest is Test {
 
     function setUp() public {
         DeployMainEngine deployMainEngine = new DeployMainEngine();
-        (mainEngine, votingContract) = deployMainEngine.run();
+        (mainEngine, votingContract, artBlockNFT) = deployMainEngine.run();
         address tokenAddress = mainEngine.getTokenAddress(); // Get the address
         artBlockToken = CustomERC20Token(tokenAddress); // Create a new ArtBlockToken instance
     }

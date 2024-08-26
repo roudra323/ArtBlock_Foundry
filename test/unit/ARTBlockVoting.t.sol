@@ -6,6 +6,7 @@ import { DeployMainEngine } from "../../script/DeployMainEngine.s.sol";
 import { MainEngine } from "../../src/MainEngine.sol";
 import { VotingContract } from "../../src/ARTBlockVoting.sol";
 import { CustomERC20Token } from "../../src/CustomERC20Token.sol";
+import { ArtBlockNFT } from "../../src/ArtBlockNFT.sol";
 
 contract VotingTest is Test {
     /*//////////////////////////////////////////////////////////////
@@ -22,6 +23,7 @@ contract VotingTest is Test {
     MainEngine mainEngine;
     VotingContract votingContract;
     CustomERC20Token artBlockToken;
+    ArtBlockNFT artBlockNFT;
 
     uint256 private PRECESSION = 10 ** 18;
     uint256 private immutable TOKEN_AMOUNT = 200_000;
@@ -32,7 +34,7 @@ contract VotingTest is Test {
 
     function setUp() public {
         DeployMainEngine deployMainEngine = new DeployMainEngine();
-        (mainEngine, votingContract) = deployMainEngine.run();
+        (mainEngine, votingContract, artBlockNFT) = deployMainEngine.run();
         address tokenAddress = mainEngine.getTokenAddress();
         artBlockToken = CustomERC20Token(tokenAddress);
     }
