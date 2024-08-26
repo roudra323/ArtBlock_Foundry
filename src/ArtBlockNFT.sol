@@ -2,6 +2,7 @@
 // Compatible with OpenZeppelin Contracts ^5.0.0
 pragma solidity ^0.8.20;
 
+import { console } from "forge-std/Test.sol";
 import "@openzeppelin/contracts/token/ERC721/ERC721.sol";
 import "@openzeppelin/contracts/token/ERC721/extensions/ERC721Enumerable.sol";
 import "@openzeppelin/contracts/token/ERC721/extensions/ERC721URIStorage.sol";
@@ -12,7 +13,7 @@ contract ArtBlockNFT is ERC721, ERC721Enumerable, ERC721URIStorage, Ownable {
 
     mapping(bytes4 productId => uint256 tokenId) public productToTokenId;
 
-    constructor() ERC721("ArtBlockNFT", "ATBNFT") Ownable(msg.sender) { }
+    constructor(address MainEngine) ERC721("ArtBlockNFT", "ATBNFT") Ownable(MainEngine) { }
 
     function safeMint(address to, string memory uri, bytes4 productId) external onlyOwner {
         uint256 tokenId = _nextTokenId++;
@@ -25,15 +26,11 @@ contract ArtBlockNFT is ERC721, ERC721Enumerable, ERC721URIStorage, Ownable {
         safeTransferFrom(from, to, tokenId);
     }
 
-    function getTokenId(bytes4 tokenId) external view returns (uint256) {
-        return productToTokenId[tokenId];
-    }
-
-    function getTokenIdByProductId(bytes4 productId) external view returns (uint256) {
+    function getTokenId(bytes4 productId) external view returns (uint256) {
         return productToTokenId[productId];
     }
 
-    // The following functions are overrides required by Solidity.
+    // The following functions are overrsides required by Solidity.
 
     function _update(
         address to,

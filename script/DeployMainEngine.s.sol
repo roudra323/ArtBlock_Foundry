@@ -15,7 +15,8 @@ contract DeployMainEngine is Script {
         deployedContract = new MainEngine();
         deployedVotingContract = new VotingContract(address(deployedContract));
         deployedContract.setVotingContract(address(deployedVotingContract));
-        deployedNFTContract = new ArtBlockNFT();
+        deployedNFTContract = new ArtBlockNFT(address(deployedContract));
+        deployedContract.setNFTContract(address(deployedNFTContract));
         vm.stopBroadcast();
     }
 }

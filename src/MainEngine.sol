@@ -453,7 +453,6 @@ contract MainEngine {
         require(productBaseInfo[productId].stackReturned, "MainEngine__Stacked Amount is not returned");
         console.log("Here comes the execution");
 
-        // @error Evm revert
         if (productBaseInfo[productId].isExclusive) {
             IArtBlockNFT(artBlockNFTContract).safeMint(msg.sender, productInfo[productId].metadata, productId);
         }
@@ -476,8 +475,9 @@ contract MainEngine {
         hasEnoughBalanceToBuy(productId, communityToken)
     {
         Product memory product = productInfo[productId];
+
         if (product.isListedOnMarketPlace && isCommunityMember[msg.sender][communityToken]) {
-            if (product.currentOwner != product.author) {
+            if (product.currentOwner != address(0)) {
                 CustomERC20Token(communityToken).transferFrom(
                     msg.sender, product.author, (product.price * PRECESSION * 3) / 100
                 );
@@ -485,22 +485,24 @@ contract MainEngine {
                     msg.sender, product.currentOwner, (product.price * PRECESSION * 97) / 100
                 );
             } else {
-                CustomERC20Token(communityToken).transferFrom(msg.sender, product.currentOwner, product.price);
+                CustomERC20Token(communityToken).transferFrom(msg.sender, product.author, product.price);
             }
-
-            if (productBaseInfo[productId].isExclusive) {
-                IArtBlockNFT(artBlockNFTContract).safeTransfer(
-                    product.currentOwner, msg.sender, IArtBlockNFT(artBlockNFTContract).getTokenId(productId)
-                );
-            }
-
-            productInfo[productId].currentOwner = msg.sender;
-            productInfo[productId].currentCommunity = address(0);
-            productInfo[productId].isListedOnMarketPlace = false;
-
-            userBuyedProducts[msg.sender][communityToken].push(productId);
-            increasePoints(msg.sender, communityToken);
         }
+
+        address fromUser = product.currentOwner == address(0) ? product.author : product.currentOwner;
+
+        if (productBaseInfo[productId].isExclusive) {
+            IArtBlockNFT(artBlockNFTContract).safeTransfer(
+                fromUser, msg.sender, IArtBlockNFT(artBlockNFTContract).getTokenId(productId)
+            );
+        }
+
+        productInfo[productId].currentOwner = msg.sender;
+        productInfo[productId].currentCommunity = address(0);
+        productInfo[productId].isListedOnMarketPlace = false;
+
+        userBuyedProducts[msg.sender][communityToken].push(productId);
+        increasePoints(msg.sender, communityToken);
     }
 
     /**

@@ -273,8 +273,7 @@ contract MainEngineTest is Test {
         vm.stopPrank();
     }
 
-    modifier tillSubmitProduct() {
-        bool isExclusive = false;
+    modifier tillSubmitProduct(bool isExclusive) {
         // Initial setup
         uint256 createCommunityTokenAmount = mainEngine.getCommunityCreationFee();
         buyArtBlockTokenMod(COMMUNITY_CREATOR, createCommunityTokenAmount);
@@ -285,7 +284,7 @@ contract MainEngineTest is Test {
         _;
     }
 
-    function tillProductApprovedAndStackReturned() public tillSubmitProduct {
+    function tillProductApprovedAndStackReturned(bool isExclusive) public tillSubmitProduct(isExclusive) {
         address communityTokenAddress = mainEngine.communityTokens(0);
         bytes4 userProductID = mainEngine.userProducts(COMMUNITY_CREATOR, communityTokenAddress, 0);
         uint256 productSubmittedTime = mainEngine.getProductBaseInfo(userProductID).productSubmittedTime;
@@ -316,20 +315,74 @@ contract MainEngineTest is Test {
         mainEngine.returnStackedAmount(userProductID);
     }
 
-    function test_list_product_to_community() public {
-        tillProductApprovedAndStackReturned();
+    function test_list_product_to_community_by_author(bool _isExclusive) public {
+        bool isExclusive = _isExclusive;
+        tillProductApprovedAndStackReturned(isExclusive);
         address communityTokenAddress = mainEngine.communityTokens(0);
         bytes4 userProductID = mainEngine.userProducts(COMMUNITY_CREATOR, communityTokenAddress, 0);
 
-        console.log("Communnity token address: ", communityTokenAddress);
-
-        address currentCommunityBEF = mainEngine.getProductDetailedInfo(userProductID).currentCommunity;
-        console.log("Current Community (Before): ", currentCommunityBEF);
         vm.prank(COMMUNITY_CREATOR);
+
         mainEngine.listProductToAuthorsCommunity(userProductID, communityTokenAddress);
 
-        address currentCommunity = mainEngine.getProductDetailedInfo(userProductID).currentCommunity;
-        console.log("Current Community (After): ", currentCommunity);
         assertEq(mainEngine.getProductDetailedInfo(userProductID).isListedOnMarketPlace, true);
+        assertEq(mainEngine.getProductDetailedInfo(userProductID).currentCommunity, communityTokenAddress);
+
+        // artBlockNFT.ownerOf(artBlockNFT.getTokenId(userProductID));
+        artBlockNFT.balanceOf(COMMUNITY_CREATOR);
+        artBlockNFT.getTokenId(userProductID);
+        artBlockNFT.ownerOf(0);
+    }
+
+    function test_NFT_is_minted_by_community_author() public {
+        bool isExclusive = true;
+        tillProductApprovedAndStackReturned(isExclusive);
+        address communityTokenAddress = mainEngine.communityTokens(0);
+        bytes4 userProductID = mainEngine.userProducts(COMMUNITY_CREATOR, communityTokenAddress, 0);
+
+        vm.prank(COMMUNITY_CREATOR);
+
+        mainEngine.listProductToAuthorsCommunity(userProductID, communityTokenAddress);
+
+        address nftOwner = artBlockNFT.ownerOf(artBlockNFT.getTokenId(userProductID));
+
+        assertEq(nftOwner, COMMUNITY_CREATOR);
+    }
+
+    modifier listProductInitiallyToAuthorsCommunity() {
+        bool isExclusive = true;
+        tillProductApprovedAndStackReturned(isExclusive);
+        address communityTokenAddress = mainEngine.communityTokens(0);
+        bytes4 userProductID = mainEngine.userProducts(COMMUNITY_CREATOR, communityTokenAddress, 0);
+
+        vm.prank(COMMUNITY_CREATOR);
+        mainEngine.listProductToAuthorsCommunity(userProductID, communityTokenAddress);
+        _;
+    }
+
+    function test_buy_Exclusive_product_from_a_community() public listProductInitiallyToAuthorsCommunity {
+        address communityTokenAddress = mainEngine.communityTokens(0);
+        bytes4 userProductID = mainEngine.userProducts(COMMUNITY_CREATOR, communityTokenAddress, 0);
+        uint256 productPrice = mainEngine.getProductDetailedInfo(userProductID).price;
+        buyCommunityTokenMod(USER_2, productPrice, communityTokenAddress);
+
+        // if product is exclusive, only the author can buy it
+        bool isExclusive = mainEngine.getProductBaseInfo(userProductID).isExclusive;
+
+        // foundry::bug vm.prank only works with the first call of the function
+        // the next call will not be pranked, though all are in the same line of code
+
+        if (isExclusive) {
+            vm.startPrank(COMMUNITY_CREATOR);
+            artBlockNFT.approve(address(mainEngine), artBlockNFT.getTokenId(userProductID));
+            vm.stopPrank();
+        }
+
+        vm.startPrank(USER_2);
+        mainEngine.joinCommunity(communityTokenAddress);
+        // approve community token to used by mainContract
+        CustomERC20Token(communityTokenAddress).approve(address(mainEngine), productPrice * PRECESSION);
+        mainEngine.buyProduct(userProductID, communityTokenAddress);
+        vm.stopPrank();
     }
 }
