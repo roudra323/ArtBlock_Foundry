@@ -59,7 +59,7 @@ contract MainEngine {
     error MainEngine__ProductNotExisting();
     error MainEngine__ProductNotApproved();
     error MainEngine__VotingOngoing();
-    error MainEngine__UnAuthorised(address user);
+    error MainEngine__UnAuthorised();
     error MainEngine__ProductIsInMarketPlace();
     error MainEngine__UserActivityPointIsLOW();
 
@@ -111,6 +111,7 @@ contract MainEngine {
         address author;
         address currentOwner;
         address currentCommunity;
+        address originCommunity;
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -189,7 +190,7 @@ contract MainEngine {
 
     modifier isOwner(bytes4 productId) {
         if (productInfo[productId].currentOwner != msg.sender) {
-            revert MainEngine__UnAuthorised(msg.sender);
+            revert MainEngine__UnAuthorised();
         }
         _;
     }
@@ -203,7 +204,7 @@ contract MainEngine {
 
     modifier canPostProductToSell(bytes4 productId) {
         if (productInfo[productId].currentOwner != msg.sender) {
-            revert MainEngine__UnAuthorised(msg.sender);
+            revert MainEngine__UnAuthorised();
         }
         if (productInfo[productId].isListedOnMarketPlace) {
             revert MainEngine__ProductIsInMarketPlace();
@@ -333,7 +334,7 @@ contract MainEngine {
         console.log("Sender: ", msg.sender);
 
         if (communityInfo[commToken].communityCreator != msg.sender) {
-            revert MainEngine__UnAuthorised(msg.sender);
+            revert MainEngine__UnAuthorised();
         }
 
         // Generate a unique product ID using keccak256
@@ -366,7 +367,8 @@ contract MainEngine {
             isListedOnMarketPlace: false,
             author: msg.sender,
             currentOwner: address(0),
-            currentCommunity: commToken
+            currentCommunity: commToken,
+            originCommunity: commToken
         });
 
         userProducts[msg.sender][commToken].push(productId);
@@ -388,6 +390,7 @@ contract MainEngine {
      * @notice Function to return the stacked amount of a product.
      * @param productId The ID of the product
      */
+    // @q shouldn't the creator of the product be able to call the function ?
     function returnStackedAmount(bytes4 productId) external votingTimePassed(productId) {
         bool isApproved = IVotingContract(votingContractAddr).isApproved(productId);
         if (!productBaseInfo[productId].stackReturned) {
@@ -447,11 +450,10 @@ contract MainEngine {
         productIsApproved(productId)
         votingTimePassed(productId)
     {
-        if (productInfo[productId].author != msg.sender) {
-            revert MainEngine__UnAuthorised(msg.sender);
+        if (productInfo[productId].author != msg.sender && getCommunityInfo(commToken).communityCreator != msg.sender) {
+            revert MainEngine__UnAuthorised();
         }
         require(productBaseInfo[productId].stackReturned, "MainEngine__Stacked Amount is not returned");
-        console.log("Here comes the execution");
 
         if (productBaseInfo[productId].isExclusive) {
             IArtBlockNFT(artBlockNFTContract).safeMint(msg.sender, productInfo[productId].metadata, productId);
@@ -485,7 +487,7 @@ contract MainEngine {
                     msg.sender, product.currentOwner, (product.price * PRECESSION * 97) / 100
                 );
             } else {
-                CustomERC20Token(communityToken).transferFrom(msg.sender, product.author, product.price);
+                CustomERC20Token(communityToken).transferFrom(msg.sender, product.author, product.price * PRECESSION);
             }
         }
 
@@ -502,7 +504,7 @@ contract MainEngine {
         productInfo[productId].isListedOnMarketPlace = false;
 
         userBuyedProducts[msg.sender][communityToken].push(productId);
-        increasePoints(msg.sender, communityToken);
+        increasePoints(msg.sender, communityToken, 10);
     }
 
     /**
@@ -511,7 +513,7 @@ contract MainEngine {
      * @param price     The price of the product.
      * @param community The address of the community token.
      */
-    function listProductToCommunityForSelling(
+    function listProductToOtherCommunityForSelling(
         bytes4 productId,
         uint256 price,
         address community
@@ -519,21 +521,56 @@ contract MainEngine {
         external
         productExists(productId)
         productIsApproved(productId)
-        canPostProductToSell(productId)
         isOwner(productId)
     {
-        if (getUserActivityPoints(msg.sender, community) < 10) {
-            revert MainEngine__UserActivityPointIsLOW();
+        if (communityInfo[community].communityCreator == msg.sender) {
+            revert MainEngine__UnAuthorised();
         }
 
+        if (productInfo[productId].isListedOnMarketPlace) {
+            revert MainEngine__ProductIsInMarketPlace();
+        }
+
+        // @dis disabled for testing purpose
+
+        // if (getUserActivityPoints(msg.sender, community) < 10) {
+        //     revert MainEngine__UserActivityPointIsLOW();
+        // }
+
         productInfo[productId].price = price;
-        // transfer 3% of product price to the community creator
-        CustomERC20Token(community).transfer(communityInfo[community].communityCreator, (price * 3 * PRECESSION) / 100);
+        // transfer 10% of the price to the community creator
+        CustomERC20Token(community).transferFrom(
+            msg.sender, communityInfo[community].communityCreator, (price * PRECESSION) / 10
+        );
         productInfo[productId].isListedOnMarketPlace = true;
         productInfo[productId].currentCommunity = community;
 
         // increase activity points
-        increasePoints(msg.sender, community);
+        increasePoints(msg.sender, community, 5);
+    }
+
+    /**
+     * @notice user can list his purchased product to his community
+     * @param productId ID of the product
+     * @param price new price of the product
+     * @param community the address of community/ community token
+     */
+    function listPurchasedProductToOwnCommunity(
+        bytes4 productId,
+        uint256 price,
+        address community
+    )
+        external
+        productExists(productId)
+        productIsApproved(productId)
+        isOwner(productId)
+    {
+        if (communityInfo[community].communityCreator != msg.sender) {
+            revert MainEngine__UnAuthorised();
+        }
+        productInfo[productId].price = price;
+        productInfo[productId].isListedOnMarketPlace = true;
+        productInfo[productId].currentCommunity = community;
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -561,9 +598,9 @@ contract MainEngine {
      * @param user The address of the user.
      * @param communityToken The address of the community token.
      */
-    function increasePoints(address user, address communityToken) internal {
-        userActivityPoints[user][communityToken] += 1;
-        communityActivityPoints[communityToken] += 1;
+    function increasePoints(address user, address communityToken, uint16 points) internal {
+        userActivityPoints[user][communityToken] += points;
+        communityActivityPoints[communityToken] += points;
     }
 
     /**
@@ -653,6 +690,14 @@ contract MainEngine {
     function getProductDetailedInfo(bytes4 productId) external view returns (Product memory) {
         require(productBaseInfo[productId].exists, "Product does not exist");
         return productInfo[productId];
+    }
+
+    function getAllCommunities() external view returns (address[] memory) {
+        return communityTokens;
+    }
+
+    function getCommunityInfo(address communityToken) public view returns (CommunityInfo memory) {
+        return communityInfo[communityToken];
     }
 
     function getTotalMemberOfCommunity(address communityToken) public view returns (uint256) {
